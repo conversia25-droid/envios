@@ -1,0 +1,100 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Disparos em Massa</title>
+
+  <!-- Base do tema -->
+  <link rel="stylesheet" href="theme.css"/>
+  <!-- Camada de componentes -->
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <!-- NÃO coloque sidebar manualmente: o layout.js injeta. -->
+
+  <div class="page-header">
+    <h1>Disparos em Massa</h1>
+    <p>Selecione as instâncias conectadas, defina as mensagens e cole sua lista de leads.</p>
+  </div>
+
+  <div class="disparos-grid">
+    <!-- Coluna Esquerda -->
+    <section>
+      <div class="card">
+        <h2>Lista de Leads (Telefones)</h2>
+        <div class="form-group">
+          <label for="lead-list" class="muted">Um número por linha (ex.: 5531999998888)</label>
+          <textarea id="lead-list" placeholder="5531987654321&#10;5521912345678&#10;..."></textarea>
+          <p class="muted" style="margin-top:6px;">Formato: <b>55</b> + DDD + número (somente dígitos).</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Configuração das Mensagens</h2>
+        <div id="message-config-container"></div>
+        <div style="margin-top:10px;">
+          <button id="add-message-btn" class="btn btn-outline" type="button">+ Adicionar mensagem</button>
+        </div>
+        <p class="muted" style="margin-top:10px;">As mensagens são alternadas (round-robin) entre os leads.</p>
+      </div>
+    </section>
+
+    <!-- Coluna Direita -->
+    <section>
+      <div class="card">
+        <h2>Instâncias de Envio</h2>
+        <p class="muted" id="instance-checkboxes-hint">Instâncias disponíveis:</p>
+        <div id="instance-checkboxes" style="margin-top:8px;"></div>
+
+        <!-- Fallback oculto opcional -->
+        <div class="form-group" style="margin-top:10px; display:none;">
+          <label class="muted" for="instance-select">Seleção alternativa</label>
+          <select id="instance-select" multiple></select>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Configurações de envio</h2>
+
+        <div class="form-group">
+          <label class="muted" for="delay-time-seconds">Atraso entre mensagens (segundos)</label>
+          <input id="delay-time-seconds" type="number" min="0" value="2" />
+        </div>
+
+        <!-- REMOVIDO: bloco de Webhook (n8n) -->
+
+        <button id="send-bulk-btn" class="btn btn-primary" type="button">Enviar</button>
+
+        <div id="send-status" style="display:none; margin-top:12px;">
+          <div id="status-message"></div>
+          <div id="progress-message" class="muted"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal de QR (caso você já tenha no instâncias.html, pode ignorar aqui) -->
+  <!-- Se não usa modal nesta página, não há problema em não ter -->
+
+  <!-- Scripts -->
+  <script src="layout.js" defer></script> <!-- injeta sidebar e main-content -->
+  <script src="script.js"></script>
+  <script>
+    if (typeof getApiStatus === "function") getApiStatus();
+    if (typeof fetchInstancesForDisparos === "function") fetchInstancesForDisparos();
+    if (typeof addMessageField === "function") addMessageField();
+    const sendBtn = document.getElementById('send-bulk-btn');
+    if (sendBtn && typeof sendBulkMessages === 'function') {
+      sendBtn.addEventListener('click', sendBulkMessages);
+    }
+    const addBtn = document.getElementById('add-message-btn');
+    if (addBtn && typeof addMessageField === 'function') {
+      addBtn.addEventListener('click', addMessageField);
+    }
+  </script>
+<script src="auth.js"></script>
+<script src="layout.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
