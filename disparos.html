@@ -1,6 +1,18 @@
 ﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>
+// Guardião ultra-cedo: se não logou, manda pra login.html na MESMA pasta
+(function () {
+  try {
+    if (localStorage.getItem("userEmail")) return; // já logado
+    var here = location.pathname;                         // /envios/index.html
+    var base = here.slice(0, here.lastIndexOf("/") + 1);  // /envios/
+    var next = here.split("/").pop() || "index.html";     // index.html
+    location.replace(base + "login.html?next=" + encodeURIComponent(next));
+  } catch (_) {}
+})();
+</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Disparos em Massa</title>
@@ -92,9 +104,11 @@
     if (addBtn && typeof addMessageField === 'function') {
       addBtn.addEventListener('click', addMessageField);
     }
-  </script>
-<script src="auth.js"></script>
-<script src="layout.js"></script>
-<script src="script.js"></script>
+ <link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="style.css">
+
+<script defer src="auth.js"></script>
+<script defer src="layout.js"></script>
+<script defer src="script.js"></script> <!-- se a página usar -->
 </body>
 </html>
