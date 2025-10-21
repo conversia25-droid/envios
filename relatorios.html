@@ -1,6 +1,21 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>
+// Guardião ultra-cedo (sem depender de outros arquivos)
+(function () {
+  try {
+    // se já estiver logado, segue
+    if (localStorage.getItem("userEmail")) return;
+
+    // calcula o caminho do "login.html" na MESMA pasta da página atual
+    var here = location.pathname;
+    var base = here.slice(0, here.lastIndexOf("/") + 1);
+    var next = here.split("/").pop() || "index.html";
+    location.replace(base + "login.html?next=" + encodeURIComponent(next));
+  } catch (_) {}
+})();
+</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Relatórios | Paiva Dashboard</title>
@@ -61,3 +76,4 @@
 <script src="script.js"></script>
 </body>
 </html>
+
