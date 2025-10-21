@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Relatórios | Paiva Dashboard</title>
+
+  <!-- Seu CSS existente + tema global -->
+  <link rel="stylesheet" href="style.css"/>
+  <link rel="stylesheet" href="theme.css"/>
+</head>
+<body>
+
+  <main class="main-content">
+    <header class="page-header">
+      <h1>Relatórios</h1>
+      <p>Acompanhe os resultados e métricas do envio.</p>
+    </header>
+
+    <section class="cards-grid">
+      <!-- ===== Card com o relatório Looker Studio ===== -->
+      <div class="card">
+        <h2>Dashboard de Campanhas</h2>
+        <!-- Wrapper responsivo pro iframe -->
+        <div style="position:relative; width:100%; padding-bottom:62.5%; /* 1000x625 aprox 16:10 */">
+          <iframe
+            src="https://lookerstudio.google.com/embed/reporting/648abb5b-59ba-496a-830f-cab8b620a97e/page/UzGbF"
+            style="position:absolute; inset:0; width:100%; height:100%; border:0;"
+            frameborder="0"
+            allowfullscreen
+          ></iframe>
+        </div>
+        <p class="text-sm" style="color:#666; margin-top:10px;">
+          Caso o gráfico não carregue, verifique bloqueadores de pop-up/extensões, ou recarregue a página.
+        </p>
+      </div>
+
+      <!-- ===== Card extra (opcional) ===== -->
+      <div class="card">
+        <h2>Exportação</h2>
+        <div class="form-group">
+          <label>Período</label>
+          <select>
+            <option>Hoje</option>
+            <option>Últimos 7 dias</option>
+            <option>Últimos 30 dias</option>
+            <option>Este mês</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary">Exportar CSV</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Scripts -->
+  </script>
+<script src="auth.js"></script>
+<script src="layout.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
