@@ -155,6 +155,24 @@
         err.textContent = e;
       }
     };
-  </script>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="style.css">
+<script src="auth.js"></script>
+<script>
+  // handler do botão "Entrar"
+  document.getElementById("btnLogin").onclick = async () => {
+    const email = document.getElementById("email").value.trim();
+    const pass  = document.getElementById("password").value.trim();
+    const err   = document.getElementById("loginError");
+    try {
+      await AUTH.loginWithEmail(email, pass);
+      const next = new URLSearchParams(location.search).get("next") || "index.html";
+      location.href = next; // ex: /index.html
+    } catch(e) {
+      err.textContent = e || "Falha no login.";
+    }
+  };
+</script>
 </body>
 </html>
+
