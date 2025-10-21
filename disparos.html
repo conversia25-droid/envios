@@ -1,14 +1,15 @@
 ﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <script>
-// Guardião ultra-cedo: se não logou, manda pra login.html na MESMA pasta
+<script>
+// Redireciona cedo se não estiver logado
 (function () {
   try {
     if (localStorage.getItem("userEmail")) return; // já logado
-    var here = location.pathname;                         // /envios/index.html
-    var base = here.slice(0, here.lastIndexOf("/") + 1);  // /envios/
-    var next = here.split("/").pop() || "index.html";     // index.html
+    // monta link para o login NA MESMA PASTA da página atual
+    var here = location.pathname;                         // ex: /index.html
+    var base = here.slice(0, here.lastIndexOf("/") + 1);  // ex: /
+    var next = here.split("/").pop() || "index.html";     // ex: index.html
     location.replace(base + "login.html?next=" + encodeURIComponent(next));
   } catch (_) {}
 })();
