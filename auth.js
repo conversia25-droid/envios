@@ -1,40 +1,53 @@
-// auth.js - Login simples (localStorage)
+// auth.js - Autenticação simples via localStorage (sem Firebase)
 
-// Usuário padrão (você pode mudar)
+// Credenciais padrão (altere se quiser)
 const USER = {
   email: "admin@paiva.com",
   password: "123456"
 };
 
-// API exposta globalmente (compatível com layout.js)
+// Exponho UMA API global padrão usada pelo site
 window.AUTH = {
+  // Retorna uma Promise pra manter compatibilidade
   waitForAuth() {
-    return Promise.resolve(AUTH.isLoggedIn() ? { email: localStorage.getItem("userEmail") } : null);
+    return Promise.resolve(this.isLoggedIn() ? this.getUser() : null);
   },
+
   isLoggedIn() {
     return !!localStorage.getItem("userEmail");
   },
+
   getUser() {
-    if (!AUTH.isLoggedIn()) return null;
-    return { email: localStorage.getItem("userEmail") };
+    if (!this.isLoggedIn()) return null;
+    const email = localStorage.getItem("userEmail");
+    return { email };
   },
-  loginWithEmail(email, password) {
+
+  // === O método que seu login.html chama ===
+  async loginWithEmail(email, password) {
     if (email === USER.email && password === USER.password) {
       localStorage.setItem("userEmail", email);
-      return Promise.resolve({ email });
-    } else {
-      return Promise.reject("E-mail ou senha incorretos.");
+      return { email };
     }
+    throw "E-mail ou senha incorretos.";
   },
-  signUpWithEmail() {
-    alert("Cadastro desativado neste sistema. Solicite acesso ao administrador.");
+
+  // Mantidos por compatibilidade (mesmo que não use agora)
+  async signUpWithEmail() {
+    alert("Cadastro desativado neste modo. Solicite acesso ao administrador.");
   },
-  sendPasswordReset() {
+
+  async sendPasswordReset() {
     alert("Recuperação de senha não disponível neste modo offline.");
   },
-  logout() {
+
+  async logout() {
     localStorage.removeItem("userEmail");
-    location.href = "login.html";
+    // Volta para o login na MESMA pasta
+    const here = location.pathname;
+    const base = here.slice(0, here.lastIndexOf("/") + 1);
+    location.href = base + "login.html";
   }
 };
+
 
