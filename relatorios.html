@@ -5,40 +5,179 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Relatórios | Paiva Dashboard</title>
 
-  <!-- Seu CSS existente + tema global -->
-  <link rel="stylesheet" href="style.css"/>
   <link rel="stylesheet" href="theme.css"/>
+  <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-
   <main class="main-content">
     <header class="page-header">
       <h1>Relatórios</h1>
-      <p>Acompanhe os resultados e métricas do envio.</p>
+      <p>Acompanhe os resultados das campanhas e o desempenho das instâncias em tempo real.</p>
     </header>
 
-    <section class="cards-grid">
-      <!-- ===== Card com o relatório Looker Studio ===== -->
-      <div class="card">
-        <h2>Dashboard de Campanhas</h2>
-        <!-- Wrapper responsivo pro iframe -->
-        <div style="position:relative; width:180%; height:100%; padding-bottom:100%; /* 1000x625 aprox 16:10 */">
-          <iframe
-            src="https://lookerstudio.google.com/embed/reporting/648abb5b-59ba-496a-830f-cab8b620a97e/page/UzGbF"
-            style="position:absolute; inset:10; width:150%; height:100%; border:100%;"
-            frameborder="0"
-            allowfullscreen
-          ></iframe>
-        </div>
-        <p class="text-sm" style="color:#666; margin-top:10px;">
-          Caso o gráfico não carregue, verifique bloqueadores de pop-up/extensões, ou recarregue a página.
-        </p>
+    <!-- ============== Indicadores Resumo ============== -->
+    <section class="summary-grid">
+      <div class="summary-item">
+        <div class="label">Total de Envios</div>
+        <div class="value" id="total-envios">0</div>
       </div>
+      <div class="summary-item">
+        <div class="label">Sucessos</div>
+        <div class="value" id="sucesso-total">0</div>
+      </div>
+      <div class="summary-item">
+        <div class="label">Falhas</div>
+        <div class="value" id="falhas-total">0</div>
+      </div>
+    </section>
+
+    <!-- ============== Gráficos ============== -->
+    <section class="cards-grid">
+      <div class="card">
+        <h2>Envios por Hora</h2>
+        <canvas id="chartEnviosHora" height="300"></canvas>
+      </div>
+      <div class="card">
+        <h2>Envios por Instância</h2>
+        <canvas id="chartInstancia" height="300"></canvas>
+      </div>
+      <div class="card">
+        <h2>Sucesso x Erro</h2>
+        <canvas id="chartStatus" height="300"></canvas>
+      </div>
+    </section>
+  </main>
 
   <!-- Scripts -->
+  <script src="auth.js"></script>
+  <script src="layout.js"></script>
+
+  <script>
+  // ============================================
+  // CONFIGURAÇÃO DO SUPABASE
+  // ============================================
+  const SUPABASE_URL = "https://kqewpyvikkzwytmzfjhw.supabase.co"; // substitua aqui
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZXdweXZpa2t6d3l0bXpmamh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMyNzkyODMsImV4cCI6MjA2ODg1NTI4M30.uooRwmYB8FO4C5wEDzWY2WCAJf61-eG3zhDPOyhThVE"; // substitua aqui
+  const HEADERS = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+
+  async function buscarDados() {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/disparos_log?select=instancia,created_at,status`, { headers: HEADERS });
+    return res.ok ? res.json() : [];
+  }
+
+  // ============================================
+  // ATUALIZAR INDICADORES
+  // ============================================
+  async function atualizarIndicadores(dados) {
+    const total = dados.length;
+    const sucesso = dados.filter(d => d.status === 'enviado').length;
+    const falhas = dados.filter(d => d.status !== 'enviado').length;
+
+    document.getElementById('total-envios').textContent = total.toLocaleString('pt-BR');
+    document.getElementById('sucesso-total').textContent = sucesso.toLocaleString('pt-BR');
+    document.getElementById('falhas-total').textContent = falhas.toLocaleString('pt-BR');
+  }
+
+  // ============================================
+  // GRÁFICOS
+  // ============================================
+  let chartHora, chartInstancia, chartStatus;
+
+  function agruparPorHora(dados) {
+    const grupos = {};
+    dados.forEach(d => {
+      const hora = new Date(d.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit' });
+      grupos[hora] = (grupos[hora] || 0) + 1;
+    });
+    return grupos;
+  }
+
+  function agruparPorInstancia(dados) {
+    const grupos = {};
+    dados.forEach(d => {
+      grupos[d.instancia] = (grupos[d.instancia] || 0) + 1;
+    });
+    return grupos;
+  }
+
+  function agruparPorStatus(dados) {
+    const grupos = {};
+    dados.forEach(d => {
+      grupos[d.status] = (grupos[d.status] || 0) + 1;
+    });
+    return grupos;
+  }
+
+  async function atualizarGraficos() {
+    const dados = await buscarDados();
+    if (!dados.length) return;
+
+    atualizarIndicadores(dados);
+
+    const porHora = agruparPorHora(dados);
+    const porInstancia = agruparPorInstancia(dados);
+    const porStatus = agruparPorStatus(dados);
+
+    // ---- Gráfico por hora ----
+    const ctx1 = document.getElementById('chartEnviosHora').getContext('2d');
+    if (!chartHora) {
+      chartHora = new Chart(ctx1, {
+        type: 'line',
+        data: {
+          labels: Object.keys(porHora),
+          datasets: [{ label: 'Envios', data: Object.values(porHora), borderWidth: 2, fill: true }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+    } else {
+      chartHora.data.labels = Object.keys(porHora);
+      chartHora.data.datasets[0].data = Object.values(porHora);
+      chartHora.update();
+    }
+
+    // ---- Gráfico por instância ----
+    const ctx2 = document.getElementById('chartInstancia').getContext('2d');
+    if (!chartInstancia) {
+      chartInstancia = new Chart(ctx2, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(porInstancia),
+          datasets: [{ label: 'Envios por Instância', data: Object.values(porInstancia), borderWidth: 1 }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+    } else {
+      chartInstancia.data.labels = Object.keys(porInstancia);
+      chartInstancia.data.datasets[0].data = Object.values(porInstancia);
+      chartInstancia.update();
+    }
+
+    // ---- Gráfico por status ----
+    const ctx3 = document.getElementById('chartStatus').getContext('2d');
+    if (!chartStatus) {
+      chartStatus = new Chart(ctx3, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(porStatus),
+          datasets: [{
+            label: 'Status dos Envios',
+            data: Object.values(porStatus),
+            borderWidth: 1
+          }]
+        },
+        options: { responsive: true }
+      });
+    } else {
+      chartStatus.data.labels = Object.keys(porStatus);
+      chartStatus.data.datasets[0].data = Object.values(porStatus);
+      chartStatus.update();
+    }
+  }
+
+  // Atualiza tudo a cada 10 segundos
+  setInterval(atualizarGraficos, 10000);
+  atualizarGraficos();
   </script>
-<script src="auth.js"></script>
-<script src="layout.js"></script>
-<script src="script.js"></script>
 </body>
 </html>

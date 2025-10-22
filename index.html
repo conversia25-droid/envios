@@ -5,44 +5,158 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Início | Paiva Dashboard</title>
 
-  <link rel="stylesheet" href="style.css"/>
   <link rel="stylesheet" href="theme.css"/>
+  <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-
   <main class="main-content">
     <header class="page-header">
       <h1>Painel Geral</h1>
-      <p>Resumo do sistema e indicadores principais.</p>
+      <p>Resumo do sistema e indicadores em tempo real.</p>
     </header>
 
+    <!-- ===================== RESUMO ===================== -->
+    <section class="summary-grid">
+      <div class="summary-item">
+        <div class="label">Total de Disparos</div>
+        <div class="value" id="total-envios">0</div>
+      </div>
+      <div class="summary-item">
+        <div class="label">Disparos Hoje</div>
+        <div class="value" id="envios-hoje">0</div>
+      </div>
+      <div class="summary-item">
+        <div class="label">Instâncias Ativas</div>
+        <div class="value" id="instancias-ativas">0</div>
+      </div>
+    </section>
+
+    <!-- ===================== GRÁFICO DE ENVIOS ===================== -->
     <section class="cards-grid">
       <div class="card">
-        <h2>Resumo</h2>
-        <div class="form-group">
-          <label>Total de Usuários</label>
-          <div id="total-users" style="font-size:1.6rem; font-weight:700;">0</div>
-        </div>
-        <div class="form-group">
-          <label>Vendas no Mês</label>
-          <div id="monthly-sales" style="font-size:1.4rem; font-weight:600;">0,00</div>
+        <h2>Gráfico de Disparos por Hora</h2>
+        <div style="height:340px;">
+          <canvas id="chartEnvios"></canvas>
         </div>
       </div>
 
       <div class="card">
-        <h2>Gráfico de Vendas</h2>
-        <div style="height:320px;">
-          <canvas id="myChart"></canvas>
+        <h2>Disparos por Instância</h2>
+        <div style="height:340px;">
+          <canvas id="chartInstancias"></canvas>
         </div>
       </div>
     </section>
   </main>
 
-  <!-- libs/JS do projeto -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<!-- antes de fechar </body> -->
-<script defer src="auth.js"></script>
-<script defer src="layout.js"></script>
-<script defer src="script.js"></script>
+  <!-- ========== SCRIPTS ========== -->
+  <script src="auth.js"></script>
+  <script src="layout.js"></script>
+
+  <script>
+  // ============================================
+  // CONFIGURAÇÃO DO SUPABASE
+  // ============================================
+  const SUPABASE_URL = "https://kqewpyvikkzwytmzfjhw.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZXdweXZpa2t6d3l0bXpmamh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMyNzkyODMsImV4cCI6MjA2ODg1NTI4M30.uooRwmYB8FO4C5wEDzWY2WCAJf61-eG3zhDPOyhThVE";
+  const HEADERS = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+
+  async function fetchDisparos() {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/disparos_log?select=instancia,created_at,status`, { headers: HEADERS });
+    return res.ok ? res.json() : [];
+  }
+
+  // ============================================
+  // ATUALIZA OS INDICADORES
+  // ============================================
+  async function atualizarIndicadores() {
+    const data = await fetchDisparos();
+    const total = data.length;
+
+    const hoje = new Date().toISOString().split('T')[0];
+    const enviadosHoje = data.filter(d => d.created_at.startsWith(hoje)).length;
+
+    const instancias = new Set(data.map(d => d.instancia));
+    document.getElementById('total-envios').textContent = total.toLocaleString('pt-BR');
+    document.getElementById('envios-hoje').textContent = enviadosHoje.toLocaleString('pt-BR');
+    document.getElementById('instancias-ativas').textContent = instancias.size;
+  }
+
+  // ============================================
+  // GRÁFICO DE ENVIOS POR HORA
+  // ============================================
+  let chartEnvios, chartInstancias;
+
+  async function atualizarGraficos() {
+    const data = await fetchDisparos();
+    if (!data.length) return;
+
+    // --- Agrupa por hora ---
+    const porHora = {};
+    data.forEach(d => {
+      const hora = new Date(d.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit' });
+      porHora[hora] = (porHora[hora] || 0) + 1;
+    });
+
+    // --- Agrupa por instância ---
+    const porInstancia = {};
+    data.forEach(d => {
+      porInstancia[d.instancia] = (porInstancia[d.instancia] || 0) + 1;
+    });
+
+    // --- Gráfico 1 (linha) ---
+    const ctx1 = document.getElementById('chartEnvios').getContext('2d');
+    if (!chartEnvios) {
+      chartEnvios = new Chart(ctx1, {
+        type: 'line',
+        data: {
+          labels: Object.keys(porHora),
+          datasets: [{
+            label: 'Mensagens Enviadas',
+            data: Object.values(porHora),
+            borderWidth: 2,
+            fill: true
+          }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+    } else {
+      chartEnvios.data.labels = Object.keys(porHora);
+      chartEnvios.data.datasets[0].data = Object.values(porHora);
+      chartEnvios.update();
+    }
+
+    // --- Gráfico 2 (barras) ---
+    const ctx2 = document.getElementById('chartInstancias').getContext('2d');
+    if (!chartInstancias) {
+      chartInstancias = new Chart(ctx2, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(porInstancia),
+          datasets: [{
+            label: 'Envios por Instância',
+            data: Object.values(porInstancia),
+            borderWidth: 1
+          }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+    } else {
+      chartInstancias.data.labels = Object.keys(porInstancia);
+      chartInstancias.data.datasets[0].data = Object.values(porInstancia);
+      chartInstancias.update();
+    }
+  }
+
+  // Atualiza tudo a cada 10 segundos
+  setInterval(() => {
+    atualizarIndicadores();
+    atualizarGraficos();
+  }, 10000);
+
+  atualizarIndicadores();
+  atualizarGraficos();
+  </script>
 </body>
 </html>
