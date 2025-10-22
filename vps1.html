@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VPS1 | Paiva Dashboard</title>
+  <link rel="stylesheet" href="theme.css"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <main class="main-content">
+    <header class="page-header">
+      <h1>Ambiente: VPS1</h1>
+      <p>Conectado à Evolution API do ambiente VPS1.</p>
+    </header>
+
+    <section class="cards-grid">
+      <div class="card"><h2>Atalhos</h2>
+        <p><a class="btn btn-primary" href="instancias.html">Gerenciar Instâncias</a></p>
+        <p><a class="btn btn-primary" href="disparos.html">Disparos</a></p>
+        <p><a class="btn btn-primary" href="relatorios.html">Relatórios</a></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="auth.js"></script>
+  <script src="layout.js"></script>
+  <script src="script.js"></script>
+  <script>
+    console.log('TENANT:', AUTH.getTenant());
+  </script>
+</body>
+</html>

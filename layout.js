@@ -1,4 +1,4 @@
-// layout.js — injeta sidebar + main-content e protege as páginas com login
+// layout.js — injeta sidebar + main-content, protege as páginas e expira por inatividade
 (function () {
   // === Proteção: exige login em todas as páginas, menos login.html ===
   const isLoginPage = /(^|\/)login\.html(\?|#|$)/i.test(location.pathname);
@@ -8,6 +8,123 @@
     location.replace(`login.html?next=${encodeURIComponent(next)}`);
     return;
   }
+
+  // ======== Logout automático por inatividade + aviso com contagem ========
+  (function setupInactivityGuard() {
+    if (isLoginPage) return;                          // não roda no login
+    if (!window.AUTH || !AUTH.isLoggedIn()) return;   // só quando logado
+
+    const INATIVIDADE_MINUTOS = 10; // tempo total até logout por inatividade
+    const AVISO_SEGUNDOS = 60;      // segundos antes do logout para exibir o aviso
+
+    let idleTimer = null;     // timer principal (logout)
+    let warnTimer = null;     // timer que dispara o modal de aviso
+    let warnTicker = null;    // contador regressivo no modal
+    let remaining = AVISO_SEGUNDOS;
+
+    function ensureWarningModal() {
+      if (document.getElementById('idle-warning-modal')) return;
+
+      const css = document.createElement('style');
+      css.id = 'idle-warning-styles';
+      css.textContent = `
+        #idle-warning-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);z-index:9999}
+        #idle-warning-box{background:#fff;border-radius:12px;max-width:420px;width:92%;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.2);text-align:center}
+        #idle-warning-title{font-weight:800;font-size:1.1rem;margin-bottom:6px}
+        #idle-warning-text{color:#444;margin:6px 0 14px}
+        #idle-warning-count{font-weight:800;font-size:1.6rem}
+        #idle-warning-actions{display:flex;gap:10px;justify-content:center;margin-top:8px}
+        #idle-stay-btn,#idle-logout-btn{padding:10px 14px;border-radius:10px;border:none;cursor:pointer;font-weight:700}
+        #idle-stay-btn{background:#0a8f83;color:#fff}
+        #idle-stay-btn:hover{filter:brightness(.95)}
+        #idle-logout-btn{background:#e0e0e0}
+      `;
+      document.head.appendChild(css);
+
+      const modal = document.createElement('div');
+      modal.id = 'idle-warning-modal';
+      modal.innerHTML = `
+        <div id="idle-warning-box">
+          <div id="idle-warning-title">Sessão prestes a expirar</div>
+          <div id="idle-warning-text">Sem atividade recente. Você será desconectado em:</div>
+          <div id="idle-warning-count">—</div>
+          <div id="idle-warning-actions">
+            <button id="idle-stay-btn">Continuar logado</button>
+            <button id="idle-logout-btn">Sair agora</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      document.getElementById('idle-stay-btn').onclick = () => {
+        hideWarning();
+        resetIdleTimer();
+      };
+      document.getElementById('idle-logout-btn').onclick = () => {
+        doLogout();
+      };
+    }
+
+    function showWarning() {
+      ensureWarningModal();
+      remaining = AVISO_SEGUNDOS;
+      const modal = document.getElementById('idle-warning-modal');
+      const count = document.getElementById('idle-warning-count');
+      const render = () => { if (count) count.textContent = `${remaining}s`; };
+      render();
+      modal.style.display = 'flex';
+
+      clearInterval(warnTicker);
+      warnTicker = setInterval(() => {
+        remaining -= 1;
+        render();
+        if (remaining <= 0) {
+          clearInterval(warnTicker);
+          doLogout();
+        }
+      }, 1000);
+    }
+
+    function hideWarning() {
+      const modal = document.getElementById('idle-warning-modal');
+      if (modal) modal.style.display = 'none';
+      clearInterval(warnTicker);
+      warnTicker = null;
+    }
+
+    function doLogout() {
+      hideWarning();
+      clearTimeouts();
+      try { AUTH.logout(); } catch {}
+    }
+
+    function clearTimeouts() {
+      clearTimeout(idleTimer); idleTimer = null;
+      clearTimeout(warnTimer); warnTimer = null;
+    }
+
+    function resetIdleTimer() {
+      clearTimeouts();
+      hideWarning();
+
+      const avisoMs = Math.max(0, (INATIVIDADE_MINUTOS * 60 - AVISO_SEGUNDOS) * 1000);
+      warnTimer = setTimeout(showWarning, avisoMs);
+      idleTimer = setTimeout(doLogout, INATIVIDADE_MINUTOS * 60 * 1000);
+    }
+
+    const eventos = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    const onActivity = () => resetIdleTimer();
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      resetIdleTimer();
+    });
+
+    eventos.forEach(evt => document.addEventListener(evt, onActivity, { passive: true }));
+
+    ensureWarningModal();
+    resetIdleTimer();
+  })();
 
   if (window.__LAYOUT_APPLIED__) return;
   if (document.querySelector('.app-shell')) return;
@@ -110,9 +227,20 @@
       min-height: 100vh;
       box-sizing: border-box;
     }
-    .btn{cursor:pointer}
-    .btn-outline{background:transparent; color:#fff; border:1px solid rgba(255,255,255,.35); padding:8px 10px; border-radius:10px;}
-    .btn-outline:hover{background:rgba(255,255,255,.1);}
   `;
   document.head.appendChild(css);
+
+  // (opcional) badge do tenant na sidebar
+  try {
+    const t = (window.AUTH && AUTH.getTenant && AUTH.getTenant()) || null;
+    if (t) {
+      const brand = document.querySelector('.brand');
+      if (brand) {
+        const tag = document.createElement('div');
+        tag.style.cssText = "margin-top:6px;font-size:.85rem;opacity:.8";
+        tag.textContent = `Ambiente: ${t.label || t.id}`;
+        brand.insertAdjacentElement('afterend', tag);
+      }
+    }
+  } catch {}
 })();

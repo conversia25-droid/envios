@@ -8,16 +8,75 @@
   <link rel="stylesheet" href="theme.css"/>
   <link rel="stylesheet" href="style.css"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    /* Tabela de leads */
+    .table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+    thead th { text-align: left; background: #f9fafb; border-bottom: 1px solid #e5e7eb; padding: 10px 12px; font-weight: 700; }
+    tbody td { border-top: 1px solid #f1f5f9; padding: 10px 12px; }
+    .muted { color: #6b7280; }
+    .badge-ok { background:#e8f7f3; color:#065f46; border:1px solid #a7f3d0; padding:2px 8px; border-radius:999px; font-weight:700; font-size:.8rem; }
+    .badge-err{ background:#fef2f2; color:#991b1b; border:1px solid #fecaca; padding:2px 8px; border-radius:999px; font-weight:700; font-size:.8rem; }
+
+    /* Topo: barra de filtros/ações */
+    .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 8px 0 4px; }
+    .toolbar .select, .toolbar .btn { height: 40px; }
+    .select, .btn { border-radius: 10px; padding: 8px 10px; border:1px solid #e5e7eb; background:#fff; font-weight:600; }
+    .btn-primary { background:#0a8f83; color:#fff; border:none; }
+
+    /* Cards (gráficos) */
+    .cards-grid { display: grid; gap: 14px; }
+    @media (min-width: 1024px) {
+      .cards-grid { grid-template-columns: 1fr 1fr 0.8fr; } /* donut menor */
+    }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px; }
+    .card h2 { margin:0 0 8px; font-size:1.1rem; }
+    .card.small { padding: 12px; }
+    .card.small canvas { max-height: 200px !important; }
+  </style>
 </head>
 <body>
   <main class="main-content">
     <header class="page-header">
       <h1>Relatórios</h1>
-      <p>Acompanhe os resultados das campanhas e o desempenho das instâncias em tempo real.</p>
+      <p class="muted">Acompanhe os envios, instâncias e resultados em tempo quase real.</p>
     </header>
 
-    <!-- ============== Indicadores Resumo ============== -->
-    <section class="summary-grid">
+    <!-- === Leads Enviados (topo) === -->
+    <section class="card" style="margin-bottom:16px;">
+      <h2 style="margin:0 0 8px;">Leads enviados (recentes)</h2>
+
+      <div class="toolbar">
+        <label class="muted" for="instance-filter">Instância:</label>
+        <select id="instance-filter" class="select">
+          <option value="">Todas</option>
+          <!-- opções carregadas via JS -->
+        </select>
+
+        <button id="export-csv" class="btn btn-primary" type="button">Exportar CSV</button>
+        <span class="muted" id="leads-hint">Mostrando os últimos registros.</span>
+      </div>
+
+      <div class="table-wrap" style="margin-top:8px;">
+        <table aria-label="Leads enviados">
+          <thead>
+            <tr>
+              <th>Data/Hora</th>
+              <th>Instância</th>
+              <th>Lead (numero)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="leads-tbody">
+            <tr><td colspan="4" class="muted">Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- === KPIs === -->
+    <section class="summary-grid" style="margin-bottom:16px;">
       <div class="summary-item">
         <div class="label">Total de Envios</div>
         <div class="value" id="total-envios">0</div>
@@ -32,7 +91,7 @@
       </div>
     </section>
 
-    <!-- ============== Gráficos ============== -->
+    <!-- === Gráficos (donut reduzido) === -->
     <section class="cards-grid">
       <div class="card">
         <h2>Envios por Hora</h2>
@@ -42,46 +101,101 @@
         <h2>Envios por Instância</h2>
         <canvas id="chartInstancia" height="300"></canvas>
       </div>
-      <div class="card">
+      <div class="card small">
         <h2>Sucesso x Erro</h2>
-        <canvas id="chartStatus" height="300"></canvas>
+        <canvas id="chartStatus" height="200"></canvas>
       </div>
     </section>
   </main>
 
-  <!-- Scripts -->
+  <!-- Scripts base -->
   <script src="auth.js"></script>
   <script src="layout.js"></script>
 
   <script>
-  // ============================================
-  // CONFIGURAÇÃO DO SUPABASE
-  // ============================================
-  const SUPABASE_URL = "https://kqewpyvikkzwytmzfjhw.supabase.co"; // substitua aqui
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZXdweXZpa2t6d3l0bXpmamh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMyNzkyODMsImV4cCI6MjA2ODg1NTI4M30.uooRwmYB8FO4C5wEDzWY2WCAJf61-eG3zhDPOyhThVE"; // substitua aqui
+  // ================================
+  // SUPABASE
+  // ================================
+  const SUPABASE_URL = "https://kqewpyvikkzwytmzfjhw.supabase.co"; // ajuste se necessário
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZXdweXZpa2t6d3l0bXpmamh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMyNzkyODMsImV4cCI6MjA2ODg1NTI4M30.uooRwmYB8FO4C5wEDzWY2WCAJf61-eG3zhDPOyhThVE"; // ajuste se necessário
   const HEADERS = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
 
+  const LEAD_FIELD = "numero";
+
+  // Estado do filtro
+  let SELECTED_INSTANCE = "";
+
+  // ================================
+  // Utils
+  // ================================
+  function toCsvValue(v) {
+    const s = (v ?? "").toString();
+    if (/[",\n;]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+  function downloadFile(filename, content, mime = "text/csv;charset=utf-8") {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+  }
+  function fmtDate(dtStr) {
+    return new Date(dtStr).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  // ================================
+  // Filtro: carregar opções de instância
+  // ================================
+  async function carregarInstancias() {
+    const combo = document.getElementById('instance-filter');
+    if (!combo) return;
+    // distinct por PostgREST: distinct=on
+    const url = `${SUPABASE_URL}/rest/v1/disparos_log?select=instancia&distinct=on&order=instancia.asc`;
+    const res = await fetch(url, { headers: HEADERS });
+    if (!res.ok) return;
+    const rows = await res.json();
+
+    // Limpa, mantém “Todas”
+    combo.innerHTML = '<option value="">Todas</option>';
+    rows
+      .map(r => r.instancia)
+      .filter(Boolean)
+      .forEach(inst => {
+        const opt = document.createElement('option');
+        opt.value = inst; opt.textContent = inst;
+        combo.appendChild(opt);
+      });
+
+    // Se já havia uma seleção, preserva
+    if (SELECTED_INSTANCE) combo.value = SELECTED_INSTANCE;
+  }
+
+  // ================================
+  // BUSCA PARA GRÁFICOS / KPIs (com filtro)
+  // ================================
   async function buscarDados() {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/disparos_log?select=instancia,created_at,status`, { headers: HEADERS });
+    let url = `${SUPABASE_URL}/rest/v1/disparos_log?select=instancia,created_at,status`;
+    if (SELECTED_INSTANCE) url += `&instancia=eq.${encodeURIComponent(SELECTED_INSTANCE)}`;
+    const res = await fetch(url, { headers: HEADERS });
     return res.ok ? res.json() : [];
   }
 
-  // ============================================
-  // ATUALIZAR INDICADORES
-  // ============================================
+  // KPIs
   async function atualizarIndicadores(dados) {
     const total = dados.length;
-    const sucesso = dados.filter(d => d.status === 'enviado').length;
-    const falhas = dados.filter(d => d.status !== 'enviado').length;
+    const sucesso = dados.filter(d => String(d.status).toLowerCase() === 'enviado').length;
+    const falhas = total - sucesso;
 
     document.getElementById('total-envios').textContent = total.toLocaleString('pt-BR');
     document.getElementById('sucesso-total').textContent = sucesso.toLocaleString('pt-BR');
     document.getElementById('falhas-total').textContent = falhas.toLocaleString('pt-BR');
   }
 
-  // ============================================
+  // ================================
   // GRÁFICOS
-  // ============================================
+  // ================================
   let chartHora, chartInstancia, chartStatus;
 
   function agruparPorHora(dados) {
@@ -92,34 +206,35 @@
     });
     return grupos;
   }
-
   function agruparPorInstancia(dados) {
     const grupos = {};
-    dados.forEach(d => {
-      grupos[d.instancia] = (grupos[d.instancia] || 0) + 1;
-    });
+    dados.forEach(d => { grupos[d.instancia] = (grupos[d.instancia] || 0) + 1; });
     return grupos;
   }
-
   function agruparPorStatus(dados) {
     const grupos = {};
-    dados.forEach(d => {
-      grupos[d.status] = (grupos[d.status] || 0) + 1;
-    });
+    dados.forEach(d => { grupos[d.status] = (grupos[d.status] || 0) + 1; });
     return grupos;
   }
 
   async function atualizarGraficos() {
     const dados = await buscarDados();
-    if (!dados.length) return;
+    if (!dados.length) {
+      // zera KPIs e gráficos quando não há dados no filtro
+      await atualizarIndicadores([]);
+      if (chartHora) { chartHora.data.labels = []; chartHora.data.datasets[0].data = []; chartHora.update(); }
+      if (chartInstancia) { chartInstancia.data.labels = []; chartInstancia.data.datasets[0].data = []; chartInstancia.update(); }
+      if (chartStatus) { chartStatus.data.labels = []; chartStatus.data.datasets[0].data = []; chartStatus.update(); }
+      return;
+    }
 
-    atualizarIndicadores(dados);
+    await atualizarIndicadores(dados);
 
     const porHora = agruparPorHora(dados);
     const porInstancia = agruparPorInstancia(dados);
     const porStatus = agruparPorStatus(dados);
 
-    // ---- Gráfico por hora ----
+    // Linha: envios por hora
     const ctx1 = document.getElementById('chartEnviosHora').getContext('2d');
     if (!chartHora) {
       chartHora = new Chart(ctx1, {
@@ -136,7 +251,7 @@
       chartHora.update();
     }
 
-    // ---- Gráfico por instância ----
+    // Barras: envios por instância
     const ctx2 = document.getElementById('chartInstancia').getContext('2d');
     if (!chartInstancia) {
       chartInstancia = new Chart(ctx2, {
@@ -153,20 +268,20 @@
       chartInstancia.update();
     }
 
-    // ---- Gráfico por status ----
+    // Rosca: sucesso x erro (MENOR)
     const ctx3 = document.getElementById('chartStatus').getContext('2d');
     if (!chartStatus) {
       chartStatus = new Chart(ctx3, {
         type: 'doughnut',
         data: {
           labels: Object.keys(porStatus),
-          datasets: [{
-            label: 'Status dos Envios',
-            data: Object.values(porStatus),
-            borderWidth: 1
-          }]
+          datasets: [{ data: Object.values(porStatus), borderWidth: 1 }]
         },
-        options: { responsive: true }
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'bottom' } },
+          cutout: '60%'
+        }
       });
     } else {
       chartStatus.data.labels = Object.keys(porStatus);
@@ -175,9 +290,103 @@
     }
   }
 
-  // Atualiza tudo a cada 10 segundos
-  setInterval(atualizarGraficos, 10000);
-  atualizarGraficos();
+  // ================================
+  // LEADS (TABELA) + filtro
+  // ================================
+  async function buscarLeadsRecentes(limit = 200) {
+    let url = `${SUPABASE_URL}/rest/v1/disparos_log?select=instancia,created_at,status,${LEAD_FIELD}&order=created_at.desc&limit=${limit}`;
+    if (SELECTED_INSTANCE) url += `&instancia=eq.${encodeURIComponent(SELECTED_INSTANCE)}`;
+    const res = await fetch(url, { headers: HEADERS });
+    return res.ok ? res.json() : [];
+  }
+
+  // Mantemos em memória a última lista pra exportar
+  let LAST_LEADS_ROWS = [];
+
+  function renderLeadsTable(rows) {
+    LAST_LEADS_ROWS = rows.slice(); // guarda para exportar
+    const tbody = document.getElementById('leads-tbody');
+    const hint  = document.getElementById('leads-hint');
+    if (!tbody) return;
+
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="muted">Nenhum envio registrado.</td></tr>`;
+      if (hint) hint.textContent = SELECTED_INSTANCE ? `Sem registros para a instância "${SELECTED_INSTANCE}".` : 'Sem registros recentes.';
+      return;
+    }
+
+    const out = rows.map(r => {
+      const quando = fmtDate(r.created_at);
+      const inst   = r.instancia || '—';
+      const lead   = (r[LEAD_FIELD] != null && String(r[LEAD_FIELD]).trim() !== "") ? String(r[LEAD_FIELD]).trim() : '—';
+      const ok     = String(r.status || '').toLowerCase() === 'enviado';
+      const badge  = ok ? `<span class="badge-ok">enviado</span>` : `<span class="badge-err">${r.status || 'erro'}</span>`;
+      return `<tr>
+        <td>${quando}</td>
+        <td>${inst}</td>
+        <td>${lead}</td>
+        <td>${badge}</td>
+      </tr>`;
+    });
+
+    tbody.innerHTML = out.join('');
+    if (hint) {
+      const extra = SELECTED_INSTANCE ? ` (instância: ${SELECTED_INSTANCE})` : '';
+      hint.textContent = `Mostrando ${rows.length} registros mais recentes${extra}`;
+    }
+  }
+
+  async function atualizarLeads() {
+    const rows = await buscarLeadsRecentes(200);
+    renderLeadsTable(rows);
+  }
+
+  // ================================
+  // Exportar CSV (considera o filtro atual)
+  // ================================
+  function exportarCsv() {
+    const header = ["Data/Hora","Instância","Numero","Status"];
+    const lines = LAST_LEADS_ROWS.map(r => {
+      const quando = fmtDate(r.created_at);
+      const inst   = r.instancia || "";
+      const lead   = (r[LEAD_FIELD] != null) ? String(r[LEAD_FIELD]).trim() : "";
+      const status = r.status || "";
+      return [quando, inst, lead, status].map(toCsvValue).join(",");
+    });
+    const csv = [header.join(","), ...lines].join("\n");
+    const sufixo = SELECTED_INSTANCE ? `_${SELECTED_INSTANCE}` : "";
+    downloadFile(`leads_enviados${sufixo}.csv`, csv);
+  }
+
+  // ================================
+  // Inicialização e eventos
+  // ================================
+  async function init() {
+    await carregarInstancias();
+    await atualizarLeads();
+    await atualizarGraficos();
+
+    // Eventos
+    const combo = document.getElementById('instance-filter');
+    if (combo) {
+      combo.addEventListener('change', async () => {
+        SELECTED_INSTANCE = combo.value || "";
+        await atualizarLeads();
+        await atualizarGraficos();
+      });
+    }
+    const btnCsv = document.getElementById('export-csv');
+    if (btnCsv) btnCsv.addEventListener('click', exportarCsv);
+
+    // Atualizações periódicas
+    setInterval(async () => {
+      await carregarInstancias(); // mantém a lista atualizada (novas instâncias)
+      await atualizarLeads();
+      await atualizarGraficos();
+    }, 10000);
+  }
+
+  init();
   </script>
 </body>
 </html>

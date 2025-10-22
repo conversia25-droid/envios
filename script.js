@@ -1,36 +1,79 @@
-// =======================================================
-// Configurações da Evolution API (MANTIDAS apenas para Instâncias.html)
-// =======================================================
-const EVOLUTION_API_URL = "https://evoconversia.zapcompany.com.br";
-const API_KEY = "429683C4C977415CAAFCCE10F7D57E11";
+/* =======================================================
+   script.js — COMPLETO (Mensagens OU Imagem)
+   - Multi-tenant (lê evolutionApiUrl/apiKey/webhook do AUTH.getTenant())
+   - Gestão de instâncias (listar/criar/conectar/QR/pareamento/logout/deletar)
+   - Disparos: lista instâncias conectadas e envia campanha
+   - IMAGEM opcional: upload para Supabase Storage (bucket público) ou URL direta
+   - Auto-init por página
+   ======================================================= */
 
-// Webhook padrão (n8n) - Usado SOMENTE para notificação de CAMPANHA
-const DEFAULT_WEBHOOK_URL = "https://conversia-n8n.njuzo4.easypanel.host/webhook/campanhablack";
+/* ======== CONFIG DINÂMICA POR TENANT ======== */
+function __getTenantCfg() {
+  const t = (window.AUTH && AUTH.getTenant && AUTH.getTenant()) || {};
+  return {
+    EVOLUTION_API_URL:  (t.evolutionApiUrl || "https://evoconversia.zapcompany.com.br").replace(/\/+$/,""),
+    API_KEY:            t.apiKey          || "429683C4C977415CAAFCCE10F7D57E11",
+    DEFAULT_WEBHOOK_URL:t.webhookUrl      || "https://conversia-n8n.njuzo4.easypanel.host/webhook/campanhablack",
+    LABEL:              t.label || t.id || "—"
+  };
+}
 
-let connectionIntervalId;
-
-// =======================================================
-// Helpers HTTP (Usado apenas para Instâncias.html)
-// =======================================================
+/* ======== HTTP helpers ======== */
 function api(path, options = {}) {
-  const base = EVOLUTION_API_URL.replace(/\/+$/, "");
+  const cfg = __getTenantCfg();
   const cleanedPath = String(path).replace(/^\/+/, "");
-  const url = `${base}/${cleanedPath}`;
-  // Headers específicos para a Evolution API
-  const headers = { apikey: API_KEY, "Content-Type": "application/json", ...(options.headers || {}) };
+  const url = `${cfg.EVOLUTION_API_URL}/${cleanedPath}`;
+  const headers = { apikey: cfg.API_KEY, "Content-Type": "application/json", ...(options.headers || {}) };
   return fetch(url, { mode: "cors", ...options, headers });
 }
 async function readSafeText(res) { try { return await res.text(); } catch { return ""; } }
 
-// Pequeno helper p/ IDs seguros
-function _slugId(name) {
-  return 'inst-' + String(name).replace(/[^a-zA-Z0-9_-]/g, '_');
+/* ======== Utils ======== */
+function _slugId(name) { return 'inst-' + String(name).replace(/[^a-zA-Z0-9_-]/g, '_'); }
+// Tipo de envio (fallback para 'text' se não existir o HTML dos rádios)
+function __getSendType() {
+  const imgOpt = document.getElementById('send-type-image');
+  return (imgOpt && imgOpt.checked) ? 'image' : 'text';
 }
 
-// =======================================================
-// QR / Pairing helpers (Funções Auxiliares para Instâncias.html)
-// [ ... Código Auxiliar Omitido por Brevidade, mas Mantido no Arquivo Real ... ]
-// =======================================================
+/* =======================================================
+   SUPABASE STORAGE — AJUSTE APENAS O BUCKET SE QUISER
+   ======================================================= */
+const SB_URL    = "https://kqewpyvikkzwytmzfjhw.supabase.co";  // seu projeto
+const SB_KEY    = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZXdweXZpa2t6d3l0bXpmamh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMyNzkyODMsImV4cCI6MjA2ODg1NTI4M30.uooRwmYB8FO4C5wEDzWY2WCAJf61-eG3zhDPOyhThVE"; // anon key
+const SB_BUCKET = "whats-media"; // <= NOME do bucket público que você criou
+
+async function uploadImageToSupabase(file) {
+  if (!file) return "";
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth()+1).padStart(2,'0');
+  const d = String(now.getDate()).padStart(2,'0');
+  const safeName = (file.name || `img_${Date.now()}.png`).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `disparos/${y}/${m}/${d}/${Date.now()}_${safeName}`;
+
+  const url = `${SB_URL}/storage/v1/object/${encodeURIComponent(SB_BUCKET)}/${encodeURIComponent(path)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${SB_KEY}`,
+      "apikey": SB_KEY,
+      "Content-Type": file.type || "application/octet-stream"
+    },
+    body: file
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Falha no upload da imagem: HTTP ${res.status} – ${txt.slice(0,180)}`);
+  }
+
+  return `${SB_URL}/storage/v1/object/public/${SB_BUCKET}/${path}`;
+}
+
+/* =======================================================
+   QR / Pairing helpers (instâncias)
+   ======================================================= */
 function resolveQrImageFromPayload(payload) {
   if (!payload) return null;
   const candidates = [
@@ -57,6 +100,8 @@ function resolvePairingCodeFromPayload(payload) {
   for (const c of candidates) if (typeof c === "string" && c.trim()) return c.trim();
   return null;
 }
+
+/* ===== Countdown do QR ===== */
 let qrCountdownTimer = null;
 function ensureQrToolbar() {
   let tb = document.getElementById("qr-toolbar");
@@ -106,6 +151,9 @@ function stopQrCountdown() {
   if (el) el.textContent = "";
   if (qrCountdownTimer) { clearInterval(qrCountdownTimer); qrCountdownTimer = null; }
 }
+
+/* ===== Pairing Code ===== */
+let pairingCountdownTimer = null;
 function ensurePairingDom() {
   let pairingWrap = document.getElementById("pairing-wrap");
   if (!pairingWrap) {
@@ -141,20 +189,10 @@ function ensurePairingDom() {
       if (name) connectInstance(name);
     };
   }
-  return pairingWrap;
-}
-let pairingCountdownTimer = null;
-function showPairingCode(code, expiresAtMs) {
-  const pairingWrap = ensurePairingDom();
-  const codeEl = document.getElementById("pairing-code");
   const copyBtn = document.getElementById("pairing-copy");
-  const countdownEl = document.getElementById("pairing-countdown");
-
-  if (codeEl) codeEl.textContent = code || "—";
-  pairingWrap.style.display = "block";
-
   if (copyBtn) {
     copyBtn.onclick = async () => {
+      const codeEl = document.getElementById("pairing-code");
       try {
         await navigator.clipboard.writeText(codeEl.textContent.trim());
         copyBtn.textContent = "Copiado!";
@@ -162,6 +200,14 @@ function showPairingCode(code, expiresAtMs) {
       } catch { alert("Não foi possível copiar. Copie manualmente."); }
     };
   }
+  return pairingWrap;
+}
+function showPairingCode(code, expiresAtMs) {
+  const pairingWrap = ensurePairingDom();
+  const codeEl = document.getElementById("pairing-code");
+  const countdownEl = document.getElementById("pairing-countdown");
+  if (codeEl) codeEl.textContent = code || "—";
+  pairingWrap.style.display = "block";
   if (pairingCountdownTimer) { clearInterval(pairingCountdownTimer); pairingCountdownTimer = null; }
   if (expiresAtMs && countdownEl) {
     pairingCountdownTimer = setInterval(() => {
@@ -179,6 +225,10 @@ function hidePairingCode() {
   if (countdownEl) countdownEl.textContent = "";
   if (pairingCountdownTimer) { clearInterval(pairingCountdownTimer); pairingCountdownTimer = null; }
 }
+
+/* =======================================================
+   Fluxo de conexão/QR
+   ======================================================= */
 async function tryGetQRCode(instanceName) {
   const base = encodeURIComponent(instanceName);
   const paths = [
@@ -214,182 +264,9 @@ async function safeConnectFlow(instanceName) {
   return { res, txt, asJson };
 }
 
-// =======================================================
-// INSTÂNCIAS (Funções de Gerenciamento)
-// =======================================================
-window.createInstance = async function(instanceName) {
-  const messageElement = document.getElementById("create-instance-message");
-  const createButton = document.getElementById("create-instance-button");
-  if (messageElement) messageElement.textContent = "Enviando requisição...";
-  if (createButton) createButton.disabled = true;
-  const payload = { instanceName, qrcode: true, integration: "WHATSAPP-BAILEYS" };
-  try {
-    const res = await api("instance/create", { method: "POST", body: JSON.stringify(payload) });
-    const txt = await readSafeText(res);
-    let data = {}; try { data = JSON.parse(txt || "{}"); } catch {}
-    if (!res.ok || data.status !== 200) throw new Error(data.message || txt || "Erro ao criar instância.");
-    if (messageElement) messageElement.innerHTML = `<span style="color: green;">✅ Instância "${instanceName}" criada.</span>`;
-    await connectInstance(instanceName);
-  } catch (error) {
-    console.error("Erro ao criar instância:", error);
-    if (messageElement) messageElement.innerHTML = `<span style="color: red;">❌ ${error.message}</span>`;
-  } finally {
-    if (createButton) createButton.disabled = false;
-  }
-};
-
-window.deleteInstance = async function(instanceName) {
-  if (!confirm(`Tem certeza que deseja DELETAR a instância "${instanceName}"? Essa ação é irreversível.`)) return;
-  try {
-    let res = await api(`instance/delete/${encodeURIComponent(instanceName)}`, { method: "DELETE" });
-    if (!res.ok) { res = await api(`instance/remove/${encodeURIComponent(instanceName)}`, { method: "DELETE" }); }
-    if (!res.ok) {
-      const txt = await readSafeText(res);
-      throw new Error(`HTTP ${res.status}: ${txt.slice(0, 180)}`);
-    }
-  } catch (e) {
-    alert("Falha ao deletar: " + e.message);
-  } finally {
-    fetchInstances();
-  }
-};
-
-window.connectInstance = async function(instanceName) {
-  const modal = document.getElementById("qr-modal");
-  const modalName = document.getElementById("modal-instance-name");
-  const qrStatus = document.getElementById("qr-status-message");
-  const qrImage = document.getElementById("qrcode-image");
-  if (connectionIntervalId) clearInterval(connectionIntervalId);
-  stopQrCountdown();
-  hidePairingCode();
-
-  const setMsg = (t, type = "info") => {
-    if (!qrStatus) return;
-    qrStatus.style.color = type === "error" ? "red" : (type === "success" ? "green" : "black");
-    qrStatus.innerHTML = t;
-  };
-
-  if (!modalName || !qrImage) return;
-  modalName.textContent = instanceName;
-  setMsg("Iniciando a sessão...", "info");
-  qrImage.style.display = "none";
-  qrImage.src = "";
-  ensureQrToolbar();
-  if (modal) modal.style.display = "block";
-
-  try {
-    const { res, txt, asJson } = await safeConnectFlow(instanceName);
-
-    const imgSrc = resolveQrImageFromPayload(asJson) || resolveQrImageFromPayload(txt);
-    const pairingCode = resolvePairingCodeFromPayload(asJson) || resolvePairingCodeFromPayload(txt);
-    const expiresAt = asJson?.qrcode?.expiresAt || asJson?.qrcode?.expireAt;
-    const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : undefined;
-
-    if (imgSrc) {
-      setMsg("Escaneie o QR Code abaixo:");
-      qrImage.src = imgSrc;
-      qrImage.style.display = "block";
-      hidePairingCode();
-      startQrCountdown(expiresAtMs);
-      checkConnectionStatus(instanceName);
-      return;
-    }
-    if (pairingCode) {
-      setMsg("Conecte-se com o código de pareamento:");
-      showPairingCode(pairingCode, expiresAtMs);
-      qrImage.style.display = "none";
-      checkConnectionStatus(instanceName);
-      return;
-    }
-    if (!res.ok) {
-      const serverMsg = asJson?.message || asJson?.error || txt || `HTTP ${res.status}`;
-      setMsg(`❌ Erro ao conectar: ${serverMsg}`, "error");
-      return;
-    }
-    setMsg("Sessão iniciada. Gerando QR/Código...", "info");
-    checkConnectionStatus(instanceName);
-  } catch (error) {
-    setMsg(`❌ Erro ao conectar: ${error.message}`, "error");
-    console.error("Erro de conexão:", error);
-  }
-};
-
-function checkConnectionStatus(instanceName) {
-  const qrStatus = document.getElementById("qr-status-message");
-  const qrImage = document.getElementById("qrcode-image");
-  if (!qrStatus || !qrImage) { if (connectionIntervalId) clearInterval(connectionIntervalId); return; }
-
-  const showQR = (src, expiresAtMs) => {
-    hidePairingCode();
-    qrStatus.innerHTML = "Escaneie o QR Code abaixo:";
-    qrImage.src = src;
-    qrImage.style.display = "block";
-    startQrCountdown(expiresAtMs);
-  };
-  const hideQR = (msg) => {
-    qrStatus.innerHTML = msg || "Aguardando QR Code...";
-    qrImage.style.display = "none";
-    qrImage.src = "";
-    stopQrCountdown();
-  };
-
-  if (connectionIntervalId) clearInterval(connectionIntervalId);
-  connectionIntervalId = setInterval(async () => {
-    try {
-      const res = await api(`instance/connectionState/${encodeURIComponent(instanceName)}`, { method: "GET" });
-      const text = await readSafeText(res);
-      let state = null; try { state = JSON.parse(text); } catch { state = {}; }
-      const status = state?.connectionStatus || state?.status || "unknown";
-
-      if (["open"].includes(status)) {
-        hideQR("✅ CONECTADO!");
-        clearInterval(connectionIntervalId);
-        fetchInstances();
-        const modal = document.getElementById("qr-modal");
-        stopQrCountdown();
-        if (modal) setTimeout(() => (modal.style.display = "none"), 1200);
-        return;
-      }
-
-      if (["connecting", "PAIRING", "qrcode", "QR"].includes(status)) {
-        let src = resolveQrImageFromPayload(state) || resolveQrImageFromPayload(text);
-        const expiresAt = state?.qrcode?.expiresAt || state?.qrcode?.expireAt;
-        const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : undefined;
-        if (src) { showQR(src, expiresAtMs); return; }
-
-        const pairingCode = resolvePairingCodeFromPayload(state) || resolvePairingCodeFromPayload(text);
-        if (pairingCode) { hideQR("Conecte-se com o código de pareamento:"); showPairingCode(pairingCode, expiresAtMs); return; }
-
-        src = await tryGetQRCode(instanceName);
-        if (src) { showQR(src); return; }
-
-        hidePairingCode();
-        hideQR("Gerando QR/Código de pareamento...");
-        return;
-      }
-
-      hidePairingCode();
-      hideQR(`Status: ${status}. Aguardando...`);
-    } catch (error) {
-      console.error("Polling error:", error);
-      hidePairingCode();
-      hideQR("Falha ao verificar status.");
-      clearInterval(connectionIntervalId);
-    }
-  }, 4000);
-}
-
-window.logoutInstance = async function(instanceName) {
-  try {
-    const res = await api(`instance/logout/${encodeURIComponent(instanceName)}`, { method: "DELETE" });
-    if (!res.ok) {
-      const txt = await readSafeText(res);
-      throw new Error(`HTTP ${res.status}: ${txt.slice(0, 180)}`);
-    }
-  } catch (e) { console.error("Erro no logout:", e); }
-  finally { fetchInstances(); }
-};
-
+/* =======================================================
+   Gestão de instâncias (listar, criar, conectar, logout, deletar)
+   ======================================================= */
 async function fetchInstances() {
   const root = document.getElementById("instances-grid");
   const openEl = document.getElementById("summary-open");
@@ -489,6 +366,178 @@ async function fetchInstances() {
   }
 }
 
+/* criar/deletar/logout */
+window.createInstance = async function(instanceName) {
+  const messageElement = document.getElementById("create-instance-message");
+  const createButton = document.getElementById("create-instance-button");
+  if (messageElement) messageElement.textContent = "Enviando requisição...";
+  if (createButton) createButton.disabled = true;
+  const payload = { instanceName, qrcode: true, integration: "WHATSAPP-BAILEYS" };
+  try {
+    const res = await api("instance/create", { method: "POST", body: JSON.stringify(payload) });
+    const txt = await readSafeText(res);
+    let data = {}; try { data = JSON.parse(txt || "{}"); } catch {}
+    if (!res.ok || data.status !== 200) throw new Error(data.message || txt || "Erro ao criar instância.");
+    if (messageElement) messageElement.innerHTML = `<span style="color: green;">✅ Instância "${instanceName}" criada.</span>`;
+    await connectInstance(instanceName);
+  } catch (error) {
+    console.error("Erro ao criar instância:", error);
+    if (messageElement) messageElement.innerHTML = `<span style="color: red;">❌ ${error.message}</span>`;
+  } finally {
+    if (createButton) createButton.disabled = false;
+  }
+};
+window.deleteInstance = async function(instanceName) {
+  if (!confirm(`Tem certeza que deseja DELETAR a instância "${instanceName}"?`)) return;
+  try {
+    let res = await api(`instance/delete/${encodeURIComponent(instanceName)}`, { method: "DELETE" });
+    if (!res.ok) { res = await api(`instance/remove/${encodeURIComponent(instanceName)}`, { method: "DELETE" }); }
+    if (!res.ok) {
+      const txt = await readSafeText(res);
+      throw new Error(`HTTP ${res.status}: ${txt.slice(0, 180)}`);
+    }
+  } catch (e) { alert("Falha ao deletar: " + e.message); }
+  finally { fetchInstances(); }
+};
+window.logoutInstance = async function(instanceName) {
+  try {
+    const res = await api(`instance/logout/${encodeURIComponent(instanceName)}`, { method: "DELETE" });
+    if (!res.ok) {
+      const txt = await readSafeText(res);
+      throw new Error(`HTTP ${res.status}: ${txt.slice(0, 180)}`);
+    }
+  } catch (e) { console.error("Erro no logout:", e); }
+  finally { fetchInstances(); }
+};
+
+/* conectar/ver QR */
+window.connectInstance = async function(instanceName) {
+  const modal = document.getElementById("qr-modal");
+  const modalName = document.getElementById("modal-instance-name");
+  const qrStatus = document.getElementById("qr-status-message");
+  const qrImage = document.getElementById("qrcode-image");
+  if (window.connectionIntervalId) clearInterval(window.connectionIntervalId);
+  stopQrCountdown();
+  hidePairingCode();
+
+  const setMsg = (t, type = "info") => {
+    if (!qrStatus) return;
+    qrStatus.style.color = type === "error" ? "red" : (type === "success" ? "green" : "black");
+    qrStatus.innerHTML = t;
+  };
+
+  if (!modalName || !qrImage) return;
+  modalName.textContent = instanceName;
+  setMsg("Iniciando a sessão...", "info");
+  qrImage.style.display = "none";
+  qrImage.src = "";
+  ensureQrToolbar();
+  if (modal) modal.style.display = "block";
+
+  try {
+    const { res, txt, asJson } = await safeConnectFlow(instanceName);
+
+    const imgSrc = resolveQrImageFromPayload(asJson) || resolveQrImageFromPayload(txt);
+    const pairingCode = resolvePairingCodeFromPayload(asJson) || resolvePairingCodeFromPayload(txt);
+    const expiresAt = asJson?.qrcode?.expiresAt || asJson?.qrcode?.expireAt;
+    const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : undefined;
+
+    if (imgSrc) {
+      setMsg("Escaneie o QR Code abaixo:");
+      qrImage.src = imgSrc;
+      qrImage.style.display = "block";
+      hidePairingCode();
+      startQrCountdown(expiresAtMs);
+      checkConnectionStatus(instanceName);
+      return;
+    }
+    if (pairingCode) {
+      setMsg("Conecte-se com o código de pareamento:");
+      showPairingCode(pairingCode, expiresAtMs);
+      qrImage.style.display = "none";
+      checkConnectionStatus(instanceName);
+      return;
+    }
+    if (!res.ok) {
+      const serverMsg = asJson?.message || asJson?.error || txt || `HTTP ${res.status}`;
+      setMsg(`❌ Erro ao conectar: ${serverMsg}`, "error");
+      return;
+    }
+    setMsg("Sessão iniciada. Gerando QR/Código...", "info");
+    checkConnectionStatus(instanceName);
+  } catch (error) {
+    setMsg(`❌ Erro ao conectar: ${error.message}`, "error");
+    console.error("Erro de conexão:", error);
+  }
+};
+function checkConnectionStatus(instanceName) {
+  const qrStatus = document.getElementById("qr-status-message");
+  const qrImage = document.getElementById("qrcode-image");
+  if (!qrStatus || !qrImage) { if (window.connectionIntervalId) clearInterval(window.connectionIntervalId); return; }
+
+  const showQR = (src, expiresAtMs) => {
+    hidePairingCode();
+    qrStatus.innerHTML = "Escaneie o QR Code abaixo:";
+    qrImage.src = src;
+    qrImage.style.display = "block";
+    startQrCountdown(expiresAtMs);
+  };
+  const hideQR = (msg) => {
+    qrStatus.innerHTML = msg || "Aguardando QR Code...";
+    qrImage.style.display = "none";
+    qrImage.src = "";
+    stopQrCountdown();
+  };
+
+  if (window.connectionIntervalId) clearInterval(window.connectionIntervalId);
+  window.connectionIntervalId = setInterval(async () => {
+    try {
+      const res = await api(`instance/connectionState/${encodeURIComponent(instanceName)}`, { method: "GET" });
+      const text = await readSafeText(res);
+      let state = null; try { state = JSON.parse(text); } catch { state = {}; }
+      const status = state?.connectionStatus || state?.status || "unknown";
+
+      if (["open"].includes(status)) {
+        hideQR("✅ CONECTADO!");
+        clearInterval(window.connectionIntervalId);
+        fetchInstances();
+        const modal = document.getElementById("qr-modal");
+        stopQrCountdown();
+        if (modal) setTimeout(() => (modal.style.display = "none"), 1200);
+        return;
+      }
+
+      if (["connecting", "PAIRING", "qrcode", "QR"].includes(status)) {
+        let src = resolveQrImageFromPayload(state) || resolveQrImageFromPayload(text);
+        const expiresAt = state?.qrcode?.expiresAt || state?.qrcode?.expireAt;
+        const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : undefined;
+        if (src) { showQR(src, expiresAtMs); return; }
+
+        const pairingCode = resolvePairingCodeFromPayload(state) || resolvePairingCodeFromPayload(text);
+        if (pairingCode) { hideQR("Conecte-se com o código de pareamento:"); showPairingCode(pairingCode, expiresAtMs); return; }
+
+        src = await tryGetQRCode(instanceName);
+        if (src) { showQR(src); return; }
+
+        hidePairingCode();
+        hideQR("Gerando QR/Código de pareamento...");
+        return;
+      }
+
+      hidePairingCode();
+      hideQR(`Status: ${status}. Aguardando...`);
+    } catch (error) {
+      console.error("Polling error:", error);
+      hidePairingCode();
+      hideQR("Falha ao verificar status.");
+      clearInterval(window.connectionIntervalId);
+    }
+  }, 4000);
+}
+
+/* =======================================================
+   Status rápido
+   ======================================================= */
 async function getApiStatus() {
   const apiStatusEl = document.getElementById("api-status");
   if (apiStatusEl) apiStatusEl.textContent = "Testando...";
@@ -505,23 +554,23 @@ async function getApiStatus() {
   await fetchInstances();
 }
 
-// =======================================================
-// DISPAROS — preencher instâncias conectadas (checkboxes)
-// =======================================================
+/* =======================================================
+   DISPAROS — preencher instâncias conectadas (por tenant)
+   ======================================================= */
 async function fetchInstancesForDisparos() {
   const grid = document.getElementById('instance-checkboxes');
   const hint = document.getElementById('instance-checkboxes-hint');
-
   if (grid) grid.innerHTML = `<div class="muted">Carregando instâncias...</div>`;
 
   try {
     const res = await api('instance/fetchInstances', { method: 'GET' });
     if (!res.ok) {
-      const txt = await readSafeText(res);
+      const txt = await res.text();
       throw new Error(`HTTP ${res.status}: ${txt.slice(0,180)}`);
     }
     const data = await res.json();
     const list = Array.isArray(data) ? data : [];
+
     const openList = list
       .filter(i => String(i.connectionStatus || '').toLowerCase() === 'open')
       .sort((a,b) => String(a.name||'').localeCompare(String(b.name||'')));
@@ -529,24 +578,22 @@ async function fetchInstancesForDisparos() {
     if (!grid) return;
 
     if (!openList.length) {
-      grid.innerHTML = `<div class="muted">Nenhuma instância conectada no momento.</div>`;
-      if (hint) hint.textContent = 'Não há instâncias conectadas.';
+      grid.innerHTML = `<div class="muted">Nenhuma instância conectada neste ambiente.</div>`;
+      if (hint) hint.textContent = 'Conecte uma instância na página Instâncias.';
     } else {
       grid.innerHTML = '';
       openList.forEach(inst => {
         const safeId = _slugId(inst.name);
-        // Garante que a primeira instância seja marcada por padrão
-        const isChecked = openList.length === 1 || openList[0].name === inst.name ? 'checked' : ''; 
         grid.insertAdjacentHTML('beforeend', `
           <div class="form-check">
             <label for="${safeId}">
-              <input type="checkbox" id="${safeId}" name="instances" value="${inst.name}" ${isChecked}>
+              <input type="checkbox" id="${safeId}" name="instances" value="${inst.name}">
               <span>${inst.name}</span>
             </label>
           </div>
         `);
       });
-      if (hint) hint.textContent = `Marque as instâncias que serão enviadas para o n8n.`;
+      if (hint) hint.textContent = `Instâncias conectadas no ambiente: ${__getTenantCfg().LABEL}`;
     }
   } catch (err) {
     console.error('Erro ao buscar instâncias (Disparos):', err);
@@ -555,145 +602,128 @@ async function fetchInstancesForDisparos() {
   }
 }
 
-if (typeof addMessageField !== 'function') {
-  window.addMessageField = function () {
-    const cont = document.getElementById('message-config-container');
-    if (!cont) return;
-    const idx = cont.querySelectorAll('.message-box').length + 1;
-    const box = document.createElement('div');
-    box.className = 'message-box';
-    box.innerHTML = `
-      <div class="form-group">
-        <label class="muted">Mensagem ${idx}</label>
-        <textarea placeholder="Digite sua mensagem..."></textarea>
-      </div>`;
-    cont.appendChild(box);
-  };
-}
+/* =======================================================
+   DISPAROS — envio de campanha (Mensagens OU Imagem)
+   ======================================================= */
+window.sendBulkMessages = async function () {
+  const status = document.getElementById('send-status');
+  const smsg = document.getElementById('status-message');
+  const pmsg = document.getElementById('progress-message');
+  const sendBtn = document.getElementById('send-bulk-btn');
 
-// =======================================================
-// LÓGICA DE ENVIO EM MASSA (FINAL: Apenas notifica o n8n)
-// =======================================================
-if (typeof sendBulkMessages !== 'function') {
-  window.sendBulkMessages = async function () {
-    const status = document.getElementById('send-status');
-    const smsg = document.getElementById('status-message');
-    const pmsg = document.getElementById('progress-message');
-    const sendBtn = document.getElementById('send-bulk-btn');
+  const sendType = __getSendType(); // 'text' | 'image'
 
-    // Funções auxiliares para atualizar o UI
-    const updateStatus = (message, isError = false) => {
-        if (smsg) {
-            smsg.textContent = message;
-            smsg.className = isError ? 'danger' : 'success';
-        }
-    };
-    const updateProgress = (message, isError = false) => {
-        if (pmsg) {
-            pmsg.textContent = message;
-            pmsg.className = isError ? 'danger' : 'muted';
-        }
-    };
-
-    // 1. Coleta e Validação dos dados do formulário
-    const instanceNames = Array.from(document.querySelectorAll('input[name="instances"]:checked')).map(el => el.value);
-    const leadList = document.getElementById('lead-list').value;
-    const delay = document.getElementById('delay-time-seconds').value || 2;
-    const messages = Array.from(document.querySelectorAll('.message-box textarea'))
-        .map(el => el.value)
-        .filter(text => text.trim() !== '');
-
-    if (instanceNames.length === 0) {
-        alert('Selecione pelo menos uma instância conectada.');
-        return;
-    }
-    if (!leadList.trim()) {
-        alert('A lista de leads está vazia.');
-        return;
-    }
-    if (messages.length === 0) {
-        alert('Adicione pelo menos uma mensagem.');
-        return;
-    }
-    
-    const numbers = leadList.split('\n')
-        .map(n => n.trim().replace(/\D/g, '')) // Limpa e formata os números
-        .filter(n => n.length > 5); 
-    
-    if (numbers.length === 0) {
-        alert('Nenhum número de telefone válido foi encontrado na lista de leads.');
-        return;
-    }
-    
-    // Configura a UI para o início do envio
+  const updateStatus = (message, isError = false) => {
+    if (smsg) smsg.textContent = message;
     if (status) status.style.display = 'block';
-    updateStatus('Iniciando notificação da campanha...', false);
-    updateProgress(`Notificando Webhook (n8n) com ${numbers.length} leads.`, false);
-    sendBtn.disabled = true;
+    if (smsg) smsg.style.color = isError ? '#c62828' : '#111';
+  };
+  const updateProgress = (message) => { if (pmsg) pmsg.textContent = message || ''; };
+  const disableSend = (dis) => { if (sendBtn) sendBtn.disabled = !!dis; };
 
-    // ===============================================================
-    // ÚNICO PASSO: POST para o Webhook (n8n) - DADOS LIMPOS
-    // ===============================================================
-    const n8nPayload = {
-        // Dados Limpos para o n8n
-        instanceName: instanceNames[0], // A primeira instância selecionada
-        delaySeconds: Number(delay),
-        messages: messages,
-        leadCount: numbers.length,
-        numbers: numbers, // Lista de leads completa
-        instances: instanceNames, // Lista de todas as instâncias selecionadas
-        source: 'Paiva Dashboard - Bulk Send',
+  try {
+    disableSend(true);
+    updateStatus('Preparando envio...');
+
+    // Instâncias
+    const instChecks = Array.from(document.querySelectorAll('input[name="instances"]:checked'));
+    const instances = instChecks.map(i => i.value);
+    if (!instances.length) throw new Error('Selecione ao menos uma instância.');
+
+    // Leads
+    const raw = (document.getElementById('lead-list')?.value || '').trim();
+    const leads = raw.split(/\r?\n/).map(s => s.replace(/\D/g,'')).filter(Boolean);
+    if (!leads.length) throw new Error('Cole a lista de leads (um por linha).');
+
+    const delaySec = Math.max(0, parseInt(document.getElementById('delay-time-seconds')?.value || '0', 10));
+    const cfg = __getTenantCfg();
+
+    // ===== Por tipo =====
+    let messages = [];
+    let media = null;
+
+    if (sendType === 'text') {
+      const msgBoxes = Array.from(document.querySelectorAll('#message-config-container textarea'));
+      messages = msgBoxes.map(t => t.value.trim()).filter(Boolean);
+      if (!messages.length) throw new Error('Preencha ao menos 1 mensagem (ou mude o tipo para Imagem).');
+    } else {
+      // tipo imagem: não exige mensagens; precisa de arquivo OU URL válida
+      const fileInput = document.getElementById('image-file');
+      const urlInput  = document.getElementById('image-url');
+      const caption   = (document.getElementById('image-caption')?.value || "").trim();
+
+      const file = fileInput?.files?.[0];
+      const directUrl = urlInput?.value?.trim();
+
+      let imageUrl = "";
+      if (file) {
+        updateProgress('Enviando imagem para o Supabase...');
+        imageUrl = await uploadImageToSupabase(file);
+      } else if (directUrl && /^https?:\/\//i.test(directUrl)) {
+        imageUrl = directUrl;
+      } else {
+        throw new Error('Selecione um arquivo de imagem ou informe uma URL pública.');
+      }
+
+      media = { type: 'image', url: imageUrl, caption };
+      messages = []; // explícito
+    }
+
+    // payload da campanha ao n8n (webhook do tenant atual)
+    const payload = {
+      tenant: {
+        baseUrl: cfg.EVOLUTION_API_URL,
+        apiKey: cfg.API_KEY
+      },
+      instances,
+      messages,            // vazio no modo imagem
+      leads,
+      delaySeconds: delaySec,
+      media                // null no modo mensagens
     };
 
-    try {
-        console.log(`[Webhook Send] Enviando para: ${DEFAULT_WEBHOOK_URL}`);
-        console.log(`[Webhook Send] Payload: `, n8nPayload);
-        
-        // Chamada customizada para o webhook, SEM usar o 'api' helper da Evolution
-        const n8nRes = await fetch(DEFAULT_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(n8nPayload)
-        });
+    const res = await fetch(cfg.DEFAULT_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
 
-        if (n8nRes.ok) {
-            updateStatus('✅ Webhook (n8n) notificado com sucesso!', false);
-            updateProgress(`O n8n recebeu os dados da campanha para processamento. Status: HTTP ${n8nRes.status}.`, false);
-        } else {
-            const n8nError = await readSafeText(n8nRes);
-            console.error(`Falha ao notificar n8n (${DEFAULT_WEBHOOK_URL}):`, n8nError);
-            updateStatus('❌ ERRO: Falha ao notificar o Webhook (n8n).', true);
-            updateProgress(`Status: HTTP ${n8nRes.status}. Verifique o log do seu n8n.`, true);
-        }
-
-    } catch (error) {
-        console.error('Erro de rede ao chamar o Webhook (n8n):', error);
-        updateStatus('❌ ERRO: Falha de rede ao notificar o Webhook (n8n).', true);
-        updateProgress(`Detalhe do erro: ${error.message}.`, true);
-    } finally {
-        sendBtn.disabled = false;
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`Webhook falhou: HTTP ${res.status} – ${txt.slice(0,180)}`);
     }
-  };
-}
 
+    if (sendType === 'text') {
+      updateStatus('✅ Campanha de MENSAGENS enviada ao n8n com sucesso.');
+      updateProgress(`Instâncias: ${instances.join(', ')} | Leads: ${leads.length} | Mensagens: ${messages.length}`);
+    } else {
+      updateStatus('✅ Campanha de IMAGEM enviada ao n8n com sucesso.');
+      const fileName = (media?.url || '').split('/').pop();
+      updateProgress(`Instâncias: ${instances.join(', ')} | Leads: ${leads.length} | Imagem: ${fileName || 'URL'}`);
+    }
+  } catch (e) {
+    console.error(e);
+    updateStatus(`❌ Erro: ${e.message || e}`, true);
+    updateProgress('');
+  } finally {
+    disableSend(false);
+  }
+};
 
-// =======================================================
-// Inicialização
-// =======================================================
-window.addEventListener('load', () => {
-  const path = (location.pathname || '').toLowerCase();
-
-  if (path.includes('instancias.html')) {
-    getApiStatus();
+/* =======================================================
+   AUTO-INIT — detecta a página e inicializa
+   ======================================================= */
+(function initPageEnhancers() {
+  // Página Instâncias: se houver grid e/ou sumário, busca instâncias
+  if (document.getElementById("instances-grid") || document.getElementById("summary-open")) {
+    fetchInstances();
   }
 
-  if (path.includes('disparos.html')) {
-    if (typeof getApiStatus === "function") getApiStatus();
+  // Página Disparos: auto-carrega a lista de instâncias do tenant atual
+  if (document.getElementById('instance-checkboxes')) {
     fetchInstancesForDisparos();
-    if (typeof addMessageField === 'function') { try { addMessageField(); } catch {} }
-    const sendBtn = document.getElementById('send-bulk-btn');
-    if (sendBtn && typeof sendBulkMessages === 'function') sendBtn.addEventListener('click', sendBulkMessages);
-    const addBtn = document.getElementById('add-message-btn');
-    if (addBtn && typeof addMessageField === 'function') addBtn.addEventListener('click', addMessageField);
+    // Botão manual de recarregar (se existir)
+    const reloadBtn = document.getElementById('reload-instances');
+    if (reloadBtn) reloadBtn.addEventListener('click', fetchInstancesForDisparos);
   }
-});
+})();

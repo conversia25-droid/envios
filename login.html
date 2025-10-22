@@ -17,7 +17,6 @@
       background: linear-gradient(135deg, #0b2545 0%, #13315c 50%, #134074 100%);
       font-family: "Inter", sans-serif;
     }
-
     .login-container {
       background: rgba(255, 255, 255, 0.96);
       padding: 40px 50px;
@@ -28,95 +27,25 @@
       text-align: center;
       animation: fadeIn 0.6s ease;
     }
-
-    .login-container:hover {
-      transform: translateY(-3px);
-      transition: 0.3s ease;
-    }
-
-    .login-container h1 {
-      color: #0b2545;
-      font-size: 1.9rem;
-      font-weight: 800;
-      margin-bottom: 10px;
-    }
-
-    .login-container .subtitle {
-      color: #555;
-      font-size: 0.95rem;
-      margin-bottom: 25px;
-    }
-
-    .login-card {
-      display: flex;
-      flex-direction: column;
-      gap: 15px;
-    }
-
-    .login-card label {
-      text-align: left;
-      font-weight: 600;
-      color: #333;
-      font-size: 0.9rem;
-    }
-
+    .login-container:hover { transform: translateY(-3px); transition: 0.3s ease; }
+    .login-container h1 { color: #0b2545; font-size: 1.9rem; font-weight: 800; margin-bottom: 10px; }
+    .login-container .subtitle { color: #555; font-size: 0.95rem; margin-bottom: 25px; }
+    .login-card { display: flex; flex-direction: column; gap: 15px; }
+    .login-card label { text-align: left; font-weight: 600; color: #333; font-size: 0.9rem; }
     .login-card input {
-      padding: 12px 14px;
-      border: 1px solid #ccc;
-      border-radius: 10px;
-      font-size: 1rem;
-      transition: all 0.2s;
-      background: #fff;
+      padding: 12px 14px; border: 1px solid #ccc; border-radius: 10px; font-size: 1rem;
+      transition: all 0.2s; background: #fff;
     }
-
-    .login-card input:focus {
-      outline: none;
-      border-color: #276fbf;
-      box-shadow: 0 0 0 2px rgba(39, 111, 191, 0.25);
-    }
-
+    .login-card input:focus { outline: none; border-color: #276fbf; box-shadow: 0 0 0 2px rgba(39,111,191,0.25); }
     .login-card button {
-      margin-top: 15px;
-      padding: 12px 14px;
-      background: #276fbf;
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      font-weight: 700;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: 0.3s;
+      margin-top: 15px; padding: 12px 14px; background: #276fbf; color: #fff; border: none;
+      border-radius: 10px; font-weight: 700; font-size: 1rem; cursor: pointer; transition: 0.3s;
     }
-
-    .login-card button:hover {
-      background: #1e5fa5;
-      transform: translateY(-1px);
-    }
-
-    .login-error {
-      margin-top: 10px;
-      color: #d93025;
-      font-size: 0.9rem;
-      height: 18px;
-    }
-
-    footer {
-      margin-top: 20px;
-      font-size: 0.8rem;
-      color: #666;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    @media (max-width: 480px) {
-      .login-container {
-        margin: 20px;
-        padding: 30px;
-      }
-    }
+    .login-card button:hover { background: #1e5fa5; transform: translateY(-1px); }
+    .login-error { margin-top: 10px; color: #d93025; font-size: 0.9rem; min-height: 18px; }
+    footer { margin-top: 20px; font-size: 0.8rem; color: #666; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 480px) { .login-container { margin: 20px; padding: 30px; } }
   </style>
 </head>
 <body class="login-body">
@@ -138,23 +67,44 @@
     <footer>© 2025 Paiva Advogados</footer>
   </div>
 
+  <!-- IMPORTANTE: auth antes de qualquer uso de AUTH -->
   <script src="auth.js"></script>
   <script>
-    const btn = document.getElementById("btnLogin");
-    const err = document.getElementById("loginError");
+    (function () {
+      const btn = document.getElementById("btnLogin");
+      const err = document.getElementById("loginError");
 
-    btn.onclick = async () => {
-      const email = document.getElementById("email").value.trim();
-      const pass = document.getElementById("password").value.trim();
-
-      try {
-        await AUTH.loginWithEmail(email, pass);
-        const next = new URLSearchParams(window.location.search).get("next") || "index.html";
-        location.href = next;
-      } catch (e) {
-        err.textContent = e;
+      function showErr(msg) {
+        console.error("[LOGIN]", msg);
+        if (err) err.textContent = String(msg || "Falha ao autenticar.");
       }
-    };
+
+      if (!btn) {
+        showErr("Botão de login não encontrado (#btnLogin).");
+        return;
+      }
+
+      btn.onclick = async () => {
+        const email = (document.getElementById("email")?.value || "").trim();
+        const pass  = (document.getElementById("password")?.value || "").trim();
+
+        try {
+          await AUTH.loginWithEmail(email, pass);
+          const params  = new URLSearchParams(location.search);
+          const next    = params.get("next");
+          const tenant  = AUTH.getTenant();
+          const destino = next || (tenant && tenant.home) || "index.html";
+          location.href = destino;
+        } catch (e) {
+          showErr(e || "E-mail ou senha incorretos.");
+        }
+      };
+
+      // Enter no campo senha dispara login
+      document.getElementById("password")?.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") btn.click();
+      });
+    })();
   </script>
 </body>
 </html>
