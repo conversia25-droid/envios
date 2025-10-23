@@ -232,7 +232,6 @@ function hidePairingCode() {
 async function tryGetQRCode(instanceName) {
   const base = encodeURIComponent(instanceName);
   const paths = [
-    `instance/connect/${base}`, `instance/connect/${encodeURIComponent(instanceName)}?linkingMethod=qr`,
     `instance/qr/${base}`, `instance/qrcode/${base}`,
     `instance/qr/${base}?format=base64`, `instance/qrcode/${base}?format=base64`,
     `instance/qr/${base}?type=image`, `instance/qrcode/${base}?type=image`,
@@ -373,66 +372,14 @@ window.createInstance = async function(instanceName) {
   const createButton = document.getElementById("create-instance-button");
   if (messageElement) messageElement.textContent = "Enviando requisição...";
   if (createButton) createButton.disabled = true;
-
-  // Aceita tanto servers antigos (integration) quanto novos (provider)
   const payload = { instanceName, qrcode: true, integration: "WHATSAPP-BAILEYS" };
-
   try {
     const res = await api("instance/create", { method: "POST", body: JSON.stringify(payload) });
     const txt = await readSafeText(res);
     let data = {}; try { data = JSON.parse(txt || "{}"); } catch {}
-
-    // ✅ Corrigido: considere sucesso por HTTP 2xx ou presença de "instance"
-    if (!res.ok && !data.instance) {
-      throw new Error(data.message || txt || `HTTP ${res.status}`);
-    }
-
-    if (messageElement) {
-      messageElement.innerHTML = `<span style="color: green;">✅ Instância "${instanceName}" criada.</span>`;
-    }
-
-    // ✅ NOVO: se o create já trouxe QR ou pairing code, mostre imediatamente
-    const imgFromCreate =
-      resolveQrImageFromPayload(data) ||
-      resolveQrImageFromPayload(data.qrcode) ||
-      data?.qrcode?.base64; // já vem como data:image/png;base64,...
-
-    const pairFromCreate =
-      resolvePairingCodeFromPayload(data) ||
-      resolvePairingCodeFromPayload(data.qrcode) ||
-      data?.qrcode?.code;
-
-    const modal = document.getElementById("qr-modal");
-    const modalName = document.getElementById("modal-instance-name");
-    const qrStatus = document.getElementById("qr-status-message");
-    const qrImage  = document.getElementById("qrcode-image");
-
-    if (modalName) modalName.textContent = instanceName;
-    if (modal) modal.style.display = "block";          // modal já existe no HTML:contentReference[oaicite:3]{index=3}
-    ensureQrToolbar();                                  // toolbar/refresh já pronta:contentReference[oaicite:4]{index=4}
-    hidePairingCode();
-    stopQrCountdown();
-
-    if (imgFromCreate) {
-      if (qrStatus) qrStatus.innerHTML = "Escaneie o QR Code abaixo:";
-      if (qrImage) {
-        qrImage.src = imgFromCreate;
-        qrImage.style.display = "block";
-      }
-      checkConnectionStatus(instanceName);             // segue o polling existente:contentReference[oaicite:5]{index=5}
-      return;
-    }
-
-    if (pairFromCreate) {
-      if (qrStatus) qrStatus.innerHTML = "Conecte-se com o código de pareamento:";
-      showPairingCode(pairFromCreate);                 // componente de pairing já existe:contentReference[oaicite:6]{index=6}
-      if (qrImage) { qrImage.style.display = "none"; qrImage.src = ""; }
-      checkConnectionStatus(instanceName);
-      return;
-    }
-
-    // Se não veio QR/código no create, cai no fluxo tradicional
-    await connectInstance(instanceName);                // usa rotas /connect e polling:contentReference[oaicite:7]{index=7}
+    if (!res.ok || data.status !== 200) throw new Error(data.message || txt || "Erro ao criar instância.");
+    if (messageElement) messageElement.innerHTML = `<span style="color: green;">✅ Instância "${instanceName}" criada.</span>`;
+    await connectInstance(instanceName);
   } catch (error) {
     console.error("Erro ao criar instância:", error);
     if (messageElement) messageElement.innerHTML = `<span style="color: red;">❌ ${error.message}</span>`;

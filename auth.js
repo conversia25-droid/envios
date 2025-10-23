@@ -1,4 +1,18 @@
 // auth.js — multiusuário/multilocação via localStorage
+// + Supabase + tabela por tenant (prod/local/vps1)
+
+// =========================
+// SUPABASE (seus dados)
+// =========================
+const SUPABASE_URL = "https://kqewpyvikkzwytmzfjhw.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZXdweXZpa2t6d3l0bXpmamh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMyNzkyODMsImV4cCI6MjA2ODg1NTI4M30.uooRwmYB8FO4C5wEDzWY2WCAJf61-eG3zhDPOyhThVE";
+
+// Tabela por tenant (para ler da tabela certa em cada login)
+const TABLES_BY_TENANT = {
+  prod:  { disparos: "disparos_log" },
+  local: { disparos: "disparos_log_local" },
+  vps1:  { disparos: "disparos_log_vps1" },
+};
 
 const USERS = [
   // === PRODUÇÃO (mesma config atual do seu script.js) ===
@@ -6,7 +20,7 @@ const USERS = [
     id: "prod",
     label: "Produção",
     email: "prod@paiva.com",           // defina o e-mail desse tenant
-    password: "senhaProd",             // defina a senha
+    password: "senhaProd",             // (mantido do teu arquivo)
     home: "index.html",                // dashboard padrão
     evolutionApiUrl: "https://evoconversia.zapcompany.com.br",
     apiKey: "429683C4C977415CAAFCCE10F7D57E11",
@@ -25,7 +39,6 @@ const USERS = [
     webhookUrl: "https://conversia-n8n.njuzo4.easypanel.host/webhook/local"
   },
 
-
   // === VPS1 ===
   {
     id: "vps1",
@@ -41,6 +54,7 @@ const USERS = [
 
 // API global compatível com layout.js
 window.AUTH = {
+  // === (originais, preservados) ===
   waitForAuth() {
     return Promise.resolve(AUTH.isLoggedIn() ? AUTH.getUser() : null);
   },
@@ -74,5 +88,39 @@ window.AUTH = {
     localStorage.removeItem("userEmail");
     localStorage.removeItem("tenantConfig");
     location.href = "login.html";
-  }
+  },
+
+  // === (novos helpers — não quebram nada) ===
+
+  // Headers da Evolution do tenant atual (útil se precisar)
+  getEvolutionHeaders() {
+    const t = AUTH.getTenant();
+    if (!t) return {};
+    return {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "apikey": t.apiKey,
+    };
+  },
+
+  // Supabase: URL e headers prontos pra usar no fetch
+  getSupabaseInfo() {
+    return { url: SUPABASE_URL, key: SUPABASE_KEY };
+  },
+  getSupabaseHeaders() {
+    return {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Prefer": "return=representation",
+    };
+  },
+
+  // Nome da tabela de disparos dependendo do login (prod/local/vps1)
+  getDisparosTable() {
+    const t = AUTH.getTenant();
+    const id = t?.id || "prod";
+    return (TABLES_BY_TENANT[id]?.disparos) || TABLES_BY_TENANT.prod.disparos;
+  },
 };

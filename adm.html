@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Relatórios — Admin (todas as instâncias)</title>
+
+  <!-- Mantém seu tema/padrão -->
+  <link rel="stylesheet" href="theme.css"/>
+  <link rel="stylesheet" href="style.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <main class="main-content">
+    <header class="page-header">
+      <h1>Relatórios — Admin</h1>
+      <p class="muted">Visão unificada de todas as instâncias e tabelas (produção, local e vps1).</p>
+    </header>
+
+    <!-- Filtros -->
+    <section class="card" style="margin-bottom:16px;">
+      <h2 style="margin:0 0 8px;">Leads enviados (recentes)</h2>
+
+      <div class="toolbar">
+        <!-- Tabelas (origens) -->
+        <div class="muted" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <strong>Origens:</strong>
+          <label><input type="checkbox" class="table-check" value="disparos_log" checked> produção</label>
+          <label><input type="checkbox" class="table-check" value="disparos_log_local" checked> local</label>
+          <label><input type="checkbox" class="table-check" value="disparos_log_vps1" checked> vps1</label>
+        </div>
+
+        <!-- Instância -->
+        <label class="muted" for="instance-filter">Instância:</label>
+        <select id="instance-filter" class="select">
+          <option value="">Todas</option>
+        </select>
+
+        <!-- Data -->
+        <label class="muted" for="date-filter">Data:</label>
+        <input type="date" id="date-filter" class="select" style="width:auto;">
+
+        <!-- Ações -->
+        <button id="export-csv" class="btn btn-primary" type="button">Exportar CSV</button>
+        <span class="muted" id="leads-hint">Carregando…</span>
+      </div>
+
+      <div class="table-wrap" style="margin-top:8px;">
+        <table aria-label="Leads enviados">
+          <thead>
+            <tr>
+              <th>Origem</th>
+              <th>Data/Hora</th>
+              <th>Instância</th>
+              <th>Número</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="leads-tbody">
+            <tr><td colspan="5" class="muted">Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- KPIs -->
+    <section class="summary-grid" style="margin-bottom:16px;">
+      <div class="summary-item">
+        <div class="label">Total de Envios</div>
+        <div class="value" id="total-envios">0</div>
+      </div>
+      <div class="summary-item">
+        <div class="label">Sucessos</div>
+        <div class="value" id="sucesso-total">0</div>
+      </div>
+      <div class="summary-item">
+        <div class="label">Falhas</div>
+        <div class="value" id="falhas-total">0</div>
+      </div>
+    </section>
+
+    <!-- Gráficos -->
+    <section class="cards-grid">
+      <div class="card">
+        <h2>Envios por Hora</h2>
+        <canvas id="chartEnviosHora" height="300"></canvas>
+      </div>
+      <div class="card">
+        <h2>Envios por Instância</h2>
+        <canvas id="chartInstancia" height="300"></canvas>
+      </div>
+      <div class="card small">
+        <h2>Sucesso x Erro</h2>
+        <canvas id="chartStatus" height="200"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <!-- Seus scripts base -->
+  <script src="auth.js"></script>
+  <script src="layout.js"></script>
+
+  <script>
+  // ================================
+  // Supabase (usa AUTH, sem conflitar com globals)
+  // ================================
+  const supa = AUTH.getSupabaseInfo();
+  const SB_URL = supa.url;
+  const SB_HEADERS = AUTH.getSupabaseHeaders();
+
+  // Tabelas disponíveis
+  const ALL_TABLES = ["disparos_log","disparos_log_local","disparos_log_vps1"];
+
+  // Estado UI
+  const LEAD_FIELD = "numero";
+  let SELECTED_DATE = "";
+  let SELECTED_INSTANCE = "";
+  let ENABLED_TABLES = new Set(ALL_TABLES); // checkboxes
+  let LAST_ROWS = [];
+
+  // Charts
+  let chartHora, chartInstancia, chartStatus;
+
+  // Utils
+  const fmtDate = s => s ? new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+  const toCsvValue = v => {
+    const s = (v ?? "").toString();
+    return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  function downloadFile(filename, content, mime="text/csv;charset=utf-8") {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+  function badgeStatus(st) {
+    const ok = /ok|enviado/i.test(st||"");
+    return ok ? `<span class="badge-ok">${st||'OK'}</span>` : `<span class="badge-err">${st||'Erro'}</span>`;
+  }
+
+  // ===== Fetch helpers por tabela =====
+  async function fetchFromTable(table, limit=500) {
+    let url = `${SB_URL}/rest/v1/${table}?select=instancia,created_at,status,${LEAD_FIELD}&order=created_at.desc&limit=${limit}`;
+    if (SELECTED_DATE) {
+      const start = `${SELECTED_DATE}T00:00:00`;
+      const end = `${SELECTED_DATE}T23:59:59`;
+      url += `&created_at=gte.${start}&created_at=lte.${end}`;
+    }
+    if (SELECTED_INSTANCE) {
+      url += `&instancia=eq.${encodeURIComponent(SELECTED_INSTANCE)}`;
+    }
+    const res = await fetch(url, { headers: SB_HEADERS });
+    if (!res.ok) {
+      console.error("Erro fetchFromTable", table, res.status, res.statusText);
+      return [];
+    }
+    const data = await res.json();
+    // anota a origem
+    return data.map(r => ({ ...r, __origin: table }));
+  }
+
+  async function buscarConsolidado(limitPerTable=500) {
+    const tables = Array.from(ENABLED_TABLES);
+    if (!tables.length) return [];
+    const chunks = await Promise.all(tables.map(t => fetchFromTable(t, limitPerTable)));
+    // concatena e ordena por created_at desc
+    return chunks.flat().sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
+  }
+
+  // ===== Instâncias (combo dinâmico consolidado) =====
+  async function carregarInstancias() {
+    // pega um subconjunto rápido só para listar instâncias únicas
+    const sample = await buscarConsolidado(300);
+    const uniq = Array.from(new Set(sample.map(r => r.instancia).filter(Boolean))).sort();
+    const combo = document.getElementById('instance-filter');
+    combo.innerHTML = '<option value="">Todas</option>';
+    uniq.forEach(inst => {
+      const opt = document.createElement('option');
+      opt.value = inst; opt.textContent = inst;
+      combo.appendChild(opt);
+    });
+    if (SELECTED_INSTANCE) combo.value = SELECTED_INSTANCE;
+  }
+
+  // ===== Tabela =====
+  function renderTable(rows) {
+    LAST_ROWS = rows.slice();
+    const tbody = document.getElementById('leads-tbody');
+    const hint  = document.getElementById('leads-hint');
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="muted">Nenhum registro encontrado.</td></tr>`;
+      if (hint) hint.textContent = 'Sem registros.';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${r.__origin}</td>
+        <td>${fmtDate(r.created_at)}</td>
+        <td>${r.instancia || '—'}</td>
+        <td>${r[LEAD_FIELD] || '—'}</td>
+        <td>${badgeStatus(r.status)}</td>
+      </tr>
+    `).join('');
+    if (hint) hint.textContent = `Mostrando ${rows.length} registros`;
+  }
+
+  // ===== KPIs =====
+  function atualizarKPIs(rows) {
+    const total = rows.length;
+    const sucesso = rows.filter(r => /ok|enviado/i.test(r.status||'')).length;
+    const falhas = total - sucesso;
+    document.getElementById('total-envios').textContent = total.toLocaleString('pt-BR');
+    document.getElementById('sucesso-total').textContent = sucesso.toLocaleString('pt-BR');
+    document.getElementById('falhas-total').textContent = falhas.toLocaleString('pt-BR');
+  }
+
+  // ===== Agrupamentos p/ gráficos =====
+  function agruparPorHora(rows) {
+    const out = {};
+    rows.forEach(r => {
+      const h = new Date(r.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit'});
+      out[h] = (out[h] || 0) + 1;
+    });
+    return out;
+  }
+  function agruparPorInstancia(rows) {
+    const out = {};
+    rows.forEach(r => {
+      const k = r.instancia || '—';
+      out[k] = (out[k] || 0) + 1;
+    });
+    return out;
+  }
+  function agruparPorStatus(rows) {
+    const out = {};
+    rows.forEach(r => {
+      const k = (r.status || '—').toString().toLowerCase();
+      out[k] = (out[k] || 0) + 1;
+    });
+    return out;
+  }
+
+  async function atualizarGraficos(rows) {
+    const data = rows && rows.length ? rows : await buscarConsolidado(1000);
+
+    const porHora = agruparPorHora(data);
+    const porInst = agruparPorInstancia(data);
+    const porStat = agruparPorStatus(data);
+
+    // Linha
+    const ctx1 = document.getElementById('chartEnviosHora').getContext('2d');
+    if (!chartHora) {
+      chartHora = new Chart(ctx1, {
+        type: 'line',
+        data: { labels: Object.keys(porHora), datasets: [{ label: 'Envios', data: Object.values(porHora), borderWidth: 2, fill: true }] },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+    } else {
+      chartHora.data.labels = Object.keys(porHora);
+      chartHora.data.datasets[0].data = Object.values(porHora);
+      chartHora.update();
+    }
+
+    // Barras
+    const ctx2 = document.getElementById('chartInstancia').getContext('2d');
+    if (!chartInstancia) {
+      chartInstancia = new Chart(ctx2, {
+        type: 'bar',
+        data: { labels: Object.keys(porInst), datasets: [{ label: 'Envios por Instância', data: Object.values(porInst), borderWidth: 1 }] },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+    } else {
+      chartInstancia.data.labels = Object.keys(porInst);
+      chartInstancia.data.datasets[0].data = Object.values(porInst);
+      chartInstancia.update();
+    }
+
+    // Rosca
+    const ctx3 = document.getElementById('chartStatus').getContext('2d');
+    if (!chartStatus) {
+      chartStatus = new Chart(ctx3, {
+        type: 'doughnut',
+        data: { labels: Object.keys(porStat), datasets: [{ data: Object.values(porStat), borderWidth: 1 }] },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } }, cutout: '60%' }
+      });
+    } else {
+      chartStatus.data.labels = Object.keys(porStat);
+      chartStatus.data.datasets[0].data = Object.values(porStat);
+      chartStatus.update();
+    }
+  }
+
+  // ===== Exportar CSV =====
+  function exportarCsv() {
+    const header = ["Origem","Data/Hora","Instância","Número","Status"];
+    const lines = LAST_ROWS.map(r => [
+      r.__origin, fmtDate(r.created_at), r.instancia||"", r[LEAD_FIELD]||"", r.status||""
+    ].map(toCsvValue).join(","));
+    downloadFile(`leads_admin.csv`, [header.join(","), ...lines].join("\n"));
+  }
+
+  // ===== Loop principal =====
+  async function atualizarTudo() {
+    const rows = await buscarConsolidado(500);
+    renderTable(rows);
+    atualizarKPIs(rows);
+    await carregarInstancias(); // mantém combo atualizado conforme filtros de origem
+    await atualizarGraficos(rows);
+  }
+
+  // ===== Init & eventos =====
+  async function init() {
+    // checkboxes de origem
+    document.querySelectorAll('.table-check').forEach(cb => {
+      cb.addEventListener('change', async (e) => {
+        if (e.target.checked) ENABLED_TABLES.add(e.target.value);
+        else ENABLED_TABLES.delete(e.target.value);
+        await atualizarTudo();
+      });
+    });
+
+    document.getElementById('instance-filter').addEventListener('change', async (e) => {
+      SELECTED_INSTANCE = e.target.value || "";
+      await atualizarTudo();
+    });
+
+    document.getElementById('date-filter').addEventListener('change', async (e) => {
+      SELECTED_DATE = e.target.value || "";
+      await atualizarTudo();
+    });
+
+    document.getElementById('export-csv').addEventListener('click', exportarCsv);
+
+    await atualizarTudo();
+    setInterval(atualizarTudo, 10000);
+  }
+
+  init();
+  </script>
+</body>
+</html>

@@ -56,14 +56,15 @@
 
   <script>
   // ============================================
-  // CONFIGURAÇÃO DO SUPABASE
+  // SUPABASE via AUTH + tabela dinâmica por tenant
   // ============================================
-  const SUPABASE_URL = "https://kqewpyvikkzwytmzfjhw.supabase.co";
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZXdweXZpa2t6d3l0bXpmamh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMyNzkyODMsImV4cCI6MjA2ODg1NTI4M30.uooRwmYB8FO4C5wEDzWY2WCAJf61-eG3zhDPOyhThVE";
-  const HEADERS = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+  const { url: SB_URL } = AUTH.getSupabaseInfo();
+  const SB_HEADERS = AUTH.getSupabaseHeaders();
+  const TABLE = AUTH.getDisparosTable(); // disparos_log | disparos_log_local | disparos_log_vps1
 
-  async function fetchDisparos() {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/disparos_log?select=instancia,created_at,status`, { headers: HEADERS });
+  async function fetchDisparos(limit = 2000) {
+    const url = `${SB_URL}/rest/v1/${TABLE}?select=instancia,created_at,status&order=created_at.asc&limit=${limit}`;
+    const res = await fetch(url, { headers: SB_HEADERS });
     return res.ok ? res.json() : [];
   }
 
@@ -75,7 +76,7 @@
     const total = data.length;
 
     const hoje = new Date().toISOString().split('T')[0];
-    const enviadosHoje = data.filter(d => d.created_at.startsWith(hoje)).length;
+    const enviadosHoje = data.filter(d => (d.created_at || '').startsWith(hoje)).length;
 
     const instancias = new Set(data.map(d => d.instancia));
     document.getElementById('total-envios').textContent = total.toLocaleString('pt-BR');
@@ -84,7 +85,7 @@
   }
 
   // ============================================
-  // GRÁFICO DE ENVIOS POR HORA
+  // GRÁFICO DE ENVIOS POR HORA / POR INSTÂNCIA
   // ============================================
   let chartEnvios, chartInstancias;
 
@@ -102,7 +103,8 @@
     // --- Agrupa por instância ---
     const porInstancia = {};
     data.forEach(d => {
-      porInstancia[d.instancia] = (porInstancia[d.instancia] || 0) + 1;
+      const key = d.instancia || '—';
+      porInstancia[key] = (porInstancia[key] || 0) + 1;
     });
 
     // --- Gráfico 1 (linha) ---
