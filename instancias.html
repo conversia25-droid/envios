@@ -3,82 +3,85 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Início | Paiva Dashboard</title>
+  <title>Instâncias | Paiva Dashboard</title>
 
   <link rel="stylesheet" href="style.css"/>
   <link rel="stylesheet" href="theme.css"/>
 </head>
 <body>
-   <main class="main-content">
+  <main class="main-content">
     <header class="page-header">
       <h1>Gerenciar Instâncias</h1>
-      <p>Crie, conecte e monitore as suas instâncias.</p>
-    </header>   
+      <p>Crie, conecte e monitore suas instâncias WhatsApp Evolution API.</p>
+    </header>
 
-    <!-- ===== Conteúdo principal ===== -->
-    <main class="main">
-      <div class="container" style="width:100%; margin:0;">
-        <!-- Cabeçalho: Status resumido + Resumo -->
-        <div class="grid grid-2">
-          <div class="card">
-            <h2>Status da API</h2>
-            <div style="font-size:1.1rem;margin-top:6px;">
-              <span class="muted">Situação:</span>
-              <span id="api-status" class="bold">—</span>
-            </div>
-          </div>
-
-          <div class="card">
-            <h2>Resumo</h2>
-            <div class="summary-grid" style="margin-top:6px;">
-              <div class="summary-item">
-                <div class="label">Conectada</div>
-                <div id="summary-open" class="value">—</div>
-              </div>
-              <div class="summary-item">
-                <div class="label">Aguardando QR</div>
-                <div id="summary-connecting" class="value">—</div>
-              </div>
-              <div class="summary-item">
-                <div class="label">Close / Closed</div>
-                <div id="summary-close" class="value">—</div>
-              </div>
-            </div>
+    <section class="container" style="width:100%; margin:0;">
+      <!-- ======= STATUS E RESUMO ======= -->
+      <div class="grid grid-2">
+        <div class="card">
+          <h2>Status da API</h2>
+          <div style="font-size:1.1rem;margin-top:6px;">
+            <span class="muted">Situação:</span>
+            <span id="api-status" class="bold">—</span>
           </div>
         </div>
 
-        <!-- Criar instância -->
-        <div class="card" style="margin-top: 16px;">
-          <h2>Criar nova instância</h2>
-          <div class="form-row">
-            <div>
-              <label for="new-instance-name" class="muted">Nome da instância</label>
-              <input type="text" id="new-instance-name" placeholder="Ex.: 1001, 2000, loja-central" />
+        <div class="card">
+          <h2>Resumo</h2>
+          <div class="summary-grid" style="margin-top:6px;">
+            <div class="summary-item">
+              <div class="label">Conectadas</div>
+              <div id="summary-open" class="value">—</div>
             </div>
-            <div style="align-self: end;">
-              <button id="create-instance-button" class="btn btn-primary">Criar</button>
+            <div class="summary-item">
+              <div class="label">Aguardando QR</div>
+              <div id="summary-connecting" class="value">—</div>
             </div>
-          </div>
-          <div id="create-instance-message" style="margin-top:8px;" class="muted"></div>
-        </div>
-
-        <!-- Instâncias em Cards -->
-        <div class="card" style="margin-top: 16px;">
-          <h2>Instâncias</h2>
-          <div id="instances-grid" class="instances-grid" style="margin-top:10px;">
-            <div class="instance-card">
-              <div class="instance-title muted">Carregando instâncias...</div>
+            <div class="summary-item">
+              <div class="label">Fechadas</div>
+              <div id="summary-close" class="value">—</div>
             </div>
           </div>
-          <p class="muted" style="margin-top:8px;">
-            Passe o mouse sobre um card para ver as ações (Conectar/Ver QR, Logout, Deletar). Clique no card para abrir o QR.
-          </p>
         </div>
       </div>
-    </main>
-  </div>
 
-  <!-- Modal do QR -->
+      <!-- ======= CRIAR NOVA INSTÂNCIA ======= -->
+      <div class="card" style="margin-top: 16px;">
+        <h2>Criar nova instância</h2>
+        <p class="muted" style="margin-bottom:10px;">Informe um nome único para sua instância.</p>
+        <div class="form-row" style="align-items: flex-end; gap: 12px;">
+          <div style="flex:1;">
+            <label for="new-instance-name" class="muted">Nome da instância</label>
+            <input type="text" id="new-instance-name" placeholder="Ex.: loja01, suporte, vendas" />
+          </div>
+          <button
+            id="create-instance-button"
+            class="btn btn-primary"
+            onclick="createInstance(document.getElementById('new-instance-name').value)"
+          >
+            Criar
+          </button>
+        </div>
+        <div id="create-instance-message" style="margin-top:8px;" class="muted"></div>
+      </div>
+
+      <!-- ======= LISTAGEM DE INSTÂNCIAS ======= -->
+      <div class="card" style="margin-top: 16px;">
+        <h2>Instâncias</h2>
+        <div id="instances-grid" class="instances-grid" style="margin-top:10px;">
+          <div class="instance-card">
+            <div class="instance-title muted">Carregando instâncias...</div>
+          </div>
+        </div>
+        <p class="muted" style="margin-top:8px;">
+          Passe o mouse sobre um card para ver as ações (Conectar/Ver QR, Logout, Deletar).
+          Clique em um card para abrir o QR.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======= MODAL DO QR / PAREAMENTO ======= -->
   <div id="qr-modal" class="modal">
     <div class="modal-content">
       <div class="modal-header">
@@ -89,7 +92,7 @@
       <!-- Mensagem de status -->
       <div id="qr-status-message" class="muted">—</div>
 
-      <!-- Toolbar (Atualizar QR + Contador) -->
+      <!-- Toolbar do QR -->
       <div id="qr-toolbar" style="display:none;">
         <button id="qr-refresh-btn" class="btn btn-outline" type="button">Atualizar QR</button>
         <span id="qr-countdown" class="muted"></span>
@@ -97,18 +100,21 @@
 
       <!-- Imagem do QR -->
       <img id="qrcode-image" src="" alt="QR Code" />
-      <!-- Pairing code é injetado pelo script quando existir -->
+
+      <!-- Pairing code é injetado dinamicamente pelo script -->
     </div>
   </div>
 
+  <!-- ======= SCRIPTS ======= -->
+  <script src="auth.js"></script>
+  <script src="layout.js"></script>
   <script src="script.js"></script>
   <script>
-    // Carrega status + instâncias ao abrir
-    if (typeof getApiStatus === "function") getApiStatus();
+    // Inicia o carregamento ao abrir a página
+    document.addEventListener("DOMContentLoaded", () => {
+      if (typeof getApiStatus === "function") getApiStatus();
+    });
   </script>
-<script src="auth.js"></script>
-<script src="layout.js"></script>
-<script src="script.js"></script>
 </body>
 </html>
 
