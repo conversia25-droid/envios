@@ -1,343 +1,621 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Relatórios — Admin (todas as instâncias)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Relatórios — Admin (paginado)</title>
 
-  <!-- Mantém seu tema/padrão -->
   <link rel="stylesheet" href="theme.css"/>
   <link rel="stylesheet" href="style.css"/>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      background: var(--bg,#f9fafb);
+      color: var(--fg,#111);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Inter", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .muted { color:#6b7280; font-size:.9rem; }
+
+    .page-header h1 {
+      margin:0 0 4px;
+      font-size:1.15rem;
+      font-weight:600;
+    }
+    .page-header p { margin:0; }
+
+    .toolbar {
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      margin-bottom:12px;
+    }
+    .select {
+      padding:6px 10px;
+      border-radius:8px;
+      border:1px solid #d1d5db;
+      font-size:.9rem;
+      background:#fff;
+    }
+    .btn {
+      padding:6px 10px;
+      border-radius:8px;
+      border:1px solid #d1d5db;
+      background:#fff;
+      font-size:.9rem;
+      cursor:pointer;
+      white-space:nowrap;
+      flex-shrink:0;
+    }
+    .btn:disabled { opacity:.4; cursor:not-allowed; }
+    .btn-primary {
+      background:#0a8f83;
+      border:none;
+      color:#fff;
+      font-weight:600;
+    }
+
+    .filters-card {
+      background:#fff;
+      border-radius:12px;
+      box-shadow:0 1px 4px rgb(0 0 0 / .06);
+      padding:12px;
+      margin-bottom:16px;
+    }
+
+    .relatorios-wrapper {
+      display:flex;
+      flex-wrap:wrap;
+      gap:16px;
+      align-items:flex-start;
+    }
+
+    .relatorio-card {
+      flex:1 1 320px;
+      min-width:300px;
+      background:#fff;
+      border-radius:12px;
+      box-shadow:0 1px 4px rgb(0 0 0 / .06);
+      padding:12px;
+
+      /* garante consistência de layout em todas as colunas */
+      display:flex;
+      flex-direction:column;
+      max-width:100%;
+    }
+
+    /* header do card (título + hint) */
+    .relatorio-card h3 {
+      margin:0 0 8px;
+      font-size:1rem;
+      font-weight:600;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:8px;
+      line-height:1.2;
+      flex-wrap:nowrap;
+      white-space:nowrap;
+    }
+
+    /* nome do card (ex: VPS1) fica do lado esquerdo e pode cortar com reticências */
+    .relatorio-card h3 span:first-child {
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      max-width:60%;
+      display:inline-block;
+    }
+
+    /* subtítulo cinza (ex: disparos_log_vps1) fica compacto à direita */
+    .relatorio-card h3 .card-hint {
+      font-size:.7rem;
+      color:#6b7280;
+      font-weight:400;
+      white-space:nowrap;
+      flex-shrink:0;
+    }
+
+    /* barra com paginação/botões */
+    .controls {
+      display:flex;
+      flex-wrap:wrap;
+      align-items:center;
+      row-gap:8px;
+      column-gap:8px;
+      margin-bottom:8px;
+    }
+
+    .controls .page-indicator {
+      font-weight:600;
+      font-size:.9rem;
+      white-space:nowrap;
+    }
+
+    .table-scroll {
+      max-height:520px;
+      overflow:auto;
+      border-top:1px solid #eee;
+      border-radius:8px;
+      background:#fff;
+    }
+
+    table {
+      width:100%;
+      border-collapse:collapse;
+      font-size:.85rem;
+      min-width:100%;
+      table-layout:fixed; /* garante colunas com larguras estáveis */
+    }
+
+    thead th {
+      text-align:left;
+      padding:8px;
+      background:#fbfbfb;
+      position:sticky;
+      top:0;
+      z-index:1;
+      font-weight:600;
+      border-bottom:1px solid #e5e7eb;
+      white-space:nowrap;
+    }
+
+    tbody td {
+      padding:8px;
+      border-top:1px solid #f3f3f3;
+      vertical-align:top;
+      line-height:1.3;
+      word-break:break-word;
+    }
+
+    /* fixa largura das colunas pra não quebrar layout no 3º card */
+    .table-scroll th:nth-child(1),
+    .table-scroll td:nth-child(1) {
+      width:32%;
+      word-break:break-word;
+    }
+    .table-scroll th:nth-child(2),
+    .table-scroll td:nth-child(2) {
+      width:14%;
+      text-align:left;
+      word-break:break-word;
+    }
+    .table-scroll th:nth-child(3),
+    .table-scroll td:nth-child(3) {
+      width:34%;
+      word-break:break-all; /* número pode ser grande */
+    }
+    .table-scroll th:nth-child(4),
+    .table-scroll td:nth-child(4) {
+      width:20%;
+      text-align:center;
+    }
+
+    .badge-ok {
+      background:#10b981;
+      color:#fff;
+      padding:4px 8px;
+      border-radius:999px;
+      font-weight:600;
+      font-size:.75rem;
+      display:inline-block;
+      line-height:1.2;
+      white-space:nowrap;
+    }
+    .badge-err {
+      background:#ef4444;
+      color:#fff;
+      padding:4px 8px;
+      border-radius:999px;
+      font-weight:600;
+      font-size:.75rem;
+      display:inline-block;
+      line-height:1.2;
+      white-space:nowrap;
+    }
+  </style>
 </head>
 <body>
-  <main class="main-content">
-    <header class="page-header">
-      <h1>Relatórios — Admin</h1>
-      <p class="muted">Visão unificada de todas as instâncias e tabelas (produção, local e vps1).</p>
+  <main class="main-content" style="padding:16px; max-width:1600px; margin:0 auto;">
+    <header class="page-header" style="margin-bottom:12px;">
+      <h1>Relatórios — Admin (paginado)</h1>
+      <p class="muted">
+        Visão unificada (Produção / Local / VPS1). Listas lado a lado. 500 registros por página. Status “enviado” em verde.
+      </p>
     </header>
 
-    <!-- Filtros -->
-    <section class="card" style="margin-bottom:16px;">
-      <h2 style="margin:0 0 8px;">Leads enviados (recentes)</h2>
+    <!-- proteção admin -->
+    <script src="auth.js"></script>
+    <script>
+      const __tenant = AUTH.getTenant();
+      if (!__tenant || __tenant.id !== "admin") {
+        alert("Acesso restrito ao administrador.");
+        location.href = "login.html";
+      }
+    </script>
 
+    <section id="filters" class="filters-card">
       <div class="toolbar">
-        <!-- Tabelas (origens) -->
-        <div class="muted" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <strong>Origens:</strong>
-          <label><input type="checkbox" class="table-check" value="disparos_log" checked> produção</label>
-          <label><input type="checkbox" class="table-check" value="disparos_log_local" checked> local</label>
-          <label><input type="checkbox" class="table-check" value="disparos_log_vps1" checked> vps1</label>
-        </div>
+        <label class="muted">Data:</label>
+        <input type="date" id="date-filter" class="select" value="" />
 
-        <!-- Instância -->
-        <label class="muted" for="instance-filter">Instância:</label>
+        <label class="muted">Instância:</label>
         <select id="instance-filter" class="select">
           <option value="">Todas</option>
         </select>
 
-        <!-- Data -->
-        <label class="muted" for="date-filter">Data:</label>
-        <input type="date" id="date-filter" class="select" style="width:auto;">
+        <button id="refresh-btn" class="btn">Atualizar</button>
 
-        <!-- Ações -->
-        <button id="export-csv" class="btn btn-primary" type="button">Exportar CSV</button>
         <span class="muted" id="leads-hint">Carregando…</span>
       </div>
-
-      <div class="table-wrap" style="margin-top:8px;">
-        <table aria-label="Leads enviados">
-          <thead>
-            <tr>
-              <th>Origem</th>
-              <th>Data/Hora</th>
-              <th>Instância</th>
-              <th>Número</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="leads-tbody">
-            <tr><td colspan="5" class="muted">Carregando...</td></tr>
-          </tbody>
-        </table>
-      </div>
     </section>
 
-    <!-- KPIs -->
-    <section class="summary-grid" style="margin-bottom:16px;">
-      <div class="summary-item">
-        <div class="label">Total de Envios</div>
-        <div class="value" id="total-envios">0</div>
-      </div>
-      <div class="summary-item">
-        <div class="label">Sucessos</div>
-        <div class="value" id="sucesso-total">0</div>
-      </div>
-      <div class="summary-item">
-        <div class="label">Falhas</div>
-        <div class="value" id="falhas-total">0</div>
-      </div>
-    </section>
-
-    <!-- Gráficos -->
-    <section class="cards-grid">
-      <div class="card">
-        <h2>Envios por Hora</h2>
-        <canvas id="chartEnviosHora" height="300"></canvas>
-      </div>
-      <div class="card">
-        <h2>Envios por Instância</h2>
-        <canvas id="chartInstancia" height="300"></canvas>
-      </div>
-      <div class="card small">
-        <h2>Sucesso x Erro</h2>
-        <canvas id="chartStatus" height="200"></canvas>
-      </div>
+    <section class="relatorios-wrapper" id="relatorios-wrapper">
+      <!-- cards gerados dinamicamente -->
     </section>
   </main>
 
-  <!-- Seus scripts base -->
-  <script src="auth.js"></script>
   <script src="layout.js"></script>
-
   <script>
-  // ================================
-  // Supabase (usa AUTH, sem conflitar com globals)
-  // ================================
-  const supa = AUTH.getSupabaseInfo();
-  const SB_URL = supa.url;
-  const SB_HEADERS = AUTH.getSupabaseHeaders();
+  (function(){
 
-  // Tabelas disponíveis
-  const ALL_TABLES = ["disparos_log","disparos_log_local","disparos_log_vps1"];
+    // 1. Configuração Supabase (puxado do auth.js que você já tem)
+    const supa = AUTH.getSupabaseInfo();
+    const SB_URL = supa.url;
+    const BASE_HEADERS = {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "apikey": supa.key,
+      "Authorization": "Bearer " + supa.key,
+      "Prefer": "return=representation,count=exact",
+      "Range-Unit": "items"
+    };
 
-  // Estado UI
-  const LEAD_FIELD = "numero";
-  let SELECTED_DATE = "";
-  let SELECTED_INSTANCE = "";
-  let ENABLED_TABLES = new Set(ALL_TABLES); // checkboxes
-  let LAST_ROWS = [];
+    // 2. Tabelas monitoradas
+    const TABLES = [
+      { key: 'disparos_log',          name: 'Produção' },
+      { key: 'disparos_log_local',    name: 'Local'    },
+      { key: 'disparos_log_vps1',     name: 'VPS1'     }
+    ];
 
-  // Charts
-  let chartHora, chartInstancia, chartStatus;
+    const LEAD_FIELD = 'numero';
+    const PAGE_SIZE = 500;
 
-  // Utils
-  const fmtDate = s => s ? new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
-  const toCsvValue = v => {
-    const s = (v ?? "").toString();
-    return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  };
-  function downloadFile(filename, content, mime="text/csv;charset=utf-8") {
-    const blob = new Blob([content], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-  }
-  function badgeStatus(st) {
-    const ok = /ok|enviado/i.test(st||"");
-    return ok ? `<span class="badge-ok">${st||'OK'}</span>` : `<span class="badge-err">${st||'Erro'}</span>`;
-  }
-
-  // ===== Fetch helpers por tabela =====
-  async function fetchFromTable(table, limit=500) {
-    let url = `${SB_URL}/rest/v1/${table}?select=instancia,created_at,status,${LEAD_FIELD}&order=created_at.desc&limit=${limit}`;
-    if (SELECTED_DATE) {
-      const start = `${SELECTED_DATE}T00:00:00`;
-      const end = `${SELECTED_DATE}T23:59:59`;
-      url += `&created_at=gte.${start}&created_at=lte.${end}`;
-    }
-    if (SELECTED_INSTANCE) {
-      url += `&instancia=eq.${encodeURIComponent(SELECTED_INSTANCE)}`;
-    }
-    const res = await fetch(url, { headers: SB_HEADERS });
-    if (!res.ok) {
-      console.error("Erro fetchFromTable", table, res.status, res.statusText);
-      return [];
-    }
-    const data = await res.json();
-    // anota a origem
-    return data.map(r => ({ ...r, __origin: table }));
-  }
-
-  async function buscarConsolidado(limitPerTable=500) {
-    const tables = Array.from(ENABLED_TABLES);
-    if (!tables.length) return [];
-    const chunks = await Promise.all(tables.map(t => fetchFromTable(t, limitPerTable)));
-    // concatena e ordena por created_at desc
-    return chunks.flat().sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
-  }
-
-  // ===== Instâncias (combo dinâmico consolidado) =====
-  async function carregarInstancias() {
-    // pega um subconjunto rápido só para listar instâncias únicas
-    const sample = await buscarConsolidado(300);
-    const uniq = Array.from(new Set(sample.map(r => r.instancia).filter(Boolean))).sort();
-    const combo = document.getElementById('instance-filter');
-    combo.innerHTML = '<option value="">Todas</option>';
-    uniq.forEach(inst => {
-      const opt = document.createElement('option');
-      opt.value = inst; opt.textContent = inst;
-      combo.appendChild(opt);
+    // 3. Estado de paginação por tabela
+    const state = {};
+    TABLES.forEach(t => {
+      state[t.key] = {
+        page: 0,
+        rows: [],
+        hasMore: true,
+        loading: false
+      };
     });
-    if (SELECTED_INSTANCE) combo.value = SELECTED_INSTANCE;
-  }
 
-  // ===== Tabela =====
-  function renderTable(rows) {
-    LAST_ROWS = rows.slice();
-    const tbody = document.getElementById('leads-tbody');
-    const hint  = document.getElementById('leads-hint');
-    if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="muted">Nenhum registro encontrado.</td></tr>`;
-      if (hint) hint.textContent = 'Sem registros.';
-      return;
-    }
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td>${r.__origin}</td>
-        <td>${fmtDate(r.created_at)}</td>
-        <td>${r.instancia || '—'}</td>
-        <td>${r[LEAD_FIELD] || '—'}</td>
-        <td>${badgeStatus(r.status)}</td>
-      </tr>
-    `).join('');
-    if (hint) hint.textContent = `Mostrando ${rows.length} registros`;
-  }
+    // ===== Helpers =====
 
-  // ===== KPIs =====
-  function atualizarKPIs(rows) {
-    const total = rows.length;
-    const sucesso = rows.filter(r => /ok|enviado/i.test(r.status||'')).length;
-    const falhas = total - sucesso;
-    document.getElementById('total-envios').textContent = total.toLocaleString('pt-BR');
-    document.getElementById('sucesso-total').textContent = sucesso.toLocaleString('pt-BR');
-    document.getElementById('falhas-total').textContent = falhas.toLocaleString('pt-BR');
-  }
-
-  // ===== Agrupamentos p/ gráficos =====
-  function agruparPorHora(rows) {
-    const out = {};
-    rows.forEach(r => {
-      const h = new Date(r.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit'});
-      out[h] = (out[h] || 0) + 1;
-    });
-    return out;
-  }
-  function agruparPorInstancia(rows) {
-    const out = {};
-    rows.forEach(r => {
-      const k = r.instancia || '—';
-      out[k] = (out[k] || 0) + 1;
-    });
-    return out;
-  }
-  function agruparPorStatus(rows) {
-    const out = {};
-    rows.forEach(r => {
-      const k = (r.status || '—').toString().toLowerCase();
-      out[k] = (out[k] || 0) + 1;
-    });
-    return out;
-  }
-
-  async function atualizarGraficos(rows) {
-    const data = rows && rows.length ? rows : await buscarConsolidado(1000);
-
-    const porHora = agruparPorHora(data);
-    const porInst = agruparPorInstancia(data);
-    const porStat = agruparPorStatus(data);
-
-    // Linha
-    const ctx1 = document.getElementById('chartEnviosHora').getContext('2d');
-    if (!chartHora) {
-      chartHora = new Chart(ctx1, {
-        type: 'line',
-        data: { labels: Object.keys(porHora), datasets: [{ label: 'Envios', data: Object.values(porHora), borderWidth: 2, fill: true }] },
-        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    // Formata data/hora do banco pro padrão BR
+    function fmtDate(dtStr) {
+      if (!dtStr) return '—';
+      const d = new Date(dtStr);
+      if (isNaN(d)) return dtStr;
+      return d.toLocaleString('pt-BR', {
+        dateStyle: 'short',
+        timeStyle: 'short'
       });
-    } else {
-      chartHora.data.labels = Object.keys(porHora);
-      chartHora.data.datasets[0].data = Object.values(porHora);
-      chartHora.update();
     }
 
-    // Barras
-    const ctx2 = document.getElementById('chartInstancia').getContext('2d');
-    if (!chartInstancia) {
-      chartInstancia = new Chart(ctx2, {
-        type: 'bar',
-        data: { labels: Object.keys(porInst), datasets: [{ label: 'Envios por Instância', data: Object.values(porInst), borderWidth: 1 }] },
-        options: { responsive: true, scales: { y: { beginAtZero: true } } }
-      });
-    } else {
-      chartInstancia.data.labels = Object.keys(porInst);
-      chartInstancia.data.datasets[0].data = Object.values(porInst);
-      chartInstancia.update();
+    // Cria badge verde/vermelha pro status
+    function badgeStatus(st) {
+      const ok = /ok|enviado/i.test(st || '');
+      return ok
+        ? '<span class="badge-ok">' + (st || 'OK') + '</span>'
+        : '<span class="badge-err">' + (st || 'Erro') + '</span>';
     }
 
-    // Rosca
-    const ctx3 = document.getElementById('chartStatus').getContext('2d');
-    if (!chartStatus) {
-      chartStatus = new Chart(ctx3, {
-        type: 'doughnut',
-        data: { labels: Object.keys(porStat), datasets: [{ data: Object.values(porStat), borderWidth: 1 }] },
-        options: { responsive: true, plugins: { legend: { position: 'bottom' } }, cutout: '60%' }
-      });
-    } else {
-      chartStatus.data.labels = Object.keys(porStat);
-      chartStatus.data.datasets[0].data = Object.values(porStat);
-      chartStatus.update();
+    // Monta o HTML interno de cada card (cada tabela)
+    function buildCardHtml(tableKey, title) {
+      return `
+        <div class="relatorio-card" id="card-${tableKey}">
+          <h3>
+            <span>${title}</span>
+            <span class="card-hint">${tableKey}</span>
+          </h3>
+
+          <div class="controls">
+            <button class="btn" data-action="prev" data-table="${tableKey}">Anterior</button>
+            <button class="btn" data-action="next" data-table="${tableKey}">Próxima</button>
+
+            <div class="page-indicator" id="page-${tableKey}">Página 1</div>
+
+            <div style="flex:1"></div>
+
+            <button class="btn btn-primary" data-action="export" data-table="${tableKey}">
+              Exportar CSV
+            </button>
+          </div>
+
+          <div class="table-scroll">
+            <table aria-label="${title}">
+              <thead>
+                <tr>
+                  <th>Data/Hora</th>
+                  <th>Instância</th>
+                  <th>Número</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-${tableKey}">
+                <tr><td colspan="4" class="muted">Carregando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
     }
-  }
 
-  // ===== Exportar CSV =====
-  function exportarCsv() {
-    const header = ["Origem","Data/Hora","Instância","Número","Status"];
-    const lines = LAST_ROWS.map(r => [
-      r.__origin, fmtDate(r.created_at), r.instancia||"", r[LEAD_FIELD]||"", r.status||""
-    ].map(toCsvValue).join(","));
-    downloadFile(`leads_admin.csv`, [header.join(","), ...lines].join("\n"));
-  }
+    // Renderiza os 3 cards só uma vez
+    function renderCardsOnce() {
+      const wrap = document.getElementById('relatorios-wrapper');
+      if (!wrap) return;
+      if (wrap.dataset.built === "1") return;
 
-  // ===== Loop principal =====
-  async function atualizarTudo() {
-    const rows = await buscarConsolidado(500);
-    renderTable(rows);
-    atualizarKPIs(rows);
-    await carregarInstancias(); // mantém combo atualizado conforme filtros de origem
-    await atualizarGraficos(rows);
-  }
+      wrap.innerHTML = TABLES.map(t => buildCardHtml(t.key, t.name)).join('');
+      wrap.dataset.built = "1";
 
-  // ===== Init & eventos =====
-  async function init() {
-    // checkboxes de origem
-    document.querySelectorAll('.table-check').forEach(cb => {
-      cb.addEventListener('change', async (e) => {
-        if (e.target.checked) ENABLED_TABLES.add(e.target.value);
-        else ENABLED_TABLES.delete(e.target.value);
-        await atualizarTudo();
+      // adiciona listeners dos botões
+      wrap.querySelectorAll('button[data-action]').forEach(btn => {
+        btn.addEventListener('click', onCardButton);
       });
+    }
+
+    // ===== Filtro de data como intervalo (gte / lt) =====
+    // Ex.: se você escolhe 2025-10-28, buscamos:
+    // created_at >= 2025-10-28T00:00:00
+    // created_at <  2025-10-29T00:00:00
+    function buildDateFilterParts(dateStr) {
+      if (!dateStr) return {gte: null, lt: null};
+
+      const [y, m, d] = dateStr.split("-").map(Number);
+
+      // início do dia selecionado
+      const start = `${dateStr}T00:00:00`;
+
+      // dia seguinte (UTC) pra fazer o "lt"
+      const base = new Date(Date.UTC(y, m-1, d, 0, 0, 0));
+      const next = new Date(base.getTime() + 24*60*60*1000);
+
+      const yyyy = next.getUTCFullYear();
+      const mm   = String(next.getUTCMonth()+1).padStart(2,"0");
+      const dd   = String(next.getUTCDate()).padStart(2,"0");
+      const endExclusive = `${yyyy}-${mm}-${dd}T00:00:00`;
+
+      return { gte: start, lt: endExclusive };
+    }
+
+    // ===== Busca paginada no Supabase =====
+    async function fetchPage(tableKey, page, limit = PAGE_SIZE) {
+      const start = page * limit;
+      const end   = start + limit - 1;
+
+      const dateFilter = document.getElementById('date-filter').value || "";
+      const instanceFilter = document.getElementById('instance-filter').value || "";
+
+      let url = SB_URL + '/rest/v1/' + tableKey +
+        '?select=instancia,created_at,status,' + LEAD_FIELD +
+        '&order=created_at.desc';
+
+      // aplica intervalo de data se houver filtro
+      if (dateFilter.trim() !== "") {
+        const range = buildDateFilterParts(dateFilter.trim());
+        if (range.gte) {
+          url += '&created_at=gte.' + encodeURIComponent(range.gte);
+        }
+        if (range.lt) {
+          url += '&created_at=lt.' + encodeURIComponent(range.lt);
+        }
+      }
+
+      // aplica filtro de instância se houver
+      if (instanceFilter.trim() !== "") {
+        url += '&instancia=eq.' + encodeURIComponent(instanceFilter.trim());
+      }
+
+      // paginação via header Range
+      const headers = {
+        ...BASE_HEADERS,
+        "Range": start + "-" + end
+      };
+
+      try {
+        const res = await fetch(url, { headers });
+        if (!res.ok) {
+          console.error('fetchPage erro', tableKey, res.status, await res.text());
+          return [];
+        }
+        const data = await res.json();
+        return data;
+      } catch (err) {
+        console.error('fetchPage catch', tableKey, err);
+        return [];
+      }
+    }
+
+    // Carrega página atual (ou vai pra próxima/anterior)
+    async function loadPageFor(tableKey, direction = 0) {
+      const s = state[tableKey];
+      if (s.loading) return;
+      s.loading = true;
+
+      if (direction === 1) {
+        s.page++;
+      } else if (direction === -1) {
+        s.page = Math.max(0, s.page - 1);
+      }
+
+      const rows = await fetchPage(tableKey, s.page);
+      s.rows = rows;
+      s.hasMore = (rows.length === PAGE_SIZE);
+      s.loading = false;
+
+      updateCardUI(tableKey);
+    }
+
+    // Atualiza o HTML da tabela, paginação e botões
+    function updateCardUI(tableKey) {
+      const s = state[tableKey];
+      const tbody = document.getElementById('tbody-' + tableKey);
+      const pageEl = document.getElementById('page-' + tableKey);
+      const card = document.getElementById('card-' + tableKey);
+
+      if (!tbody || !pageEl || !card) return;
+
+      if (!s.rows || !s.rows.length) {
+        tbody.innerHTML = `
+          <tr><td colspan="4" class="muted">Nenhum registro nesta página.</td></tr>
+        `;
+      } else {
+        tbody.innerHTML = s.rows.map(r => `
+          <tr>
+            <td>${fmtDate(r.created_at)}</td>
+            <td>${r.instancia || '—'}</td>
+            <td>${r[LEAD_FIELD] || '—'}</td>
+            <td>${badgeStatus(r.status)}</td>
+          </tr>
+        `).join('');
+      }
+
+      pageEl.textContent = 'Página ' + (s.page + 1);
+
+      const prevBtn = card.querySelector('button[data-action="prev"]');
+      const nextBtn = card.querySelector('button[data-action="next"]');
+      if (prevBtn) prevBtn.disabled = (s.page === 0);
+      if (nextBtn) nextBtn.disabled = !s.hasMore;
+    }
+
+    // Exporta CSV só da página atual
+    function exportCsv(tableKey) {
+      const s = state[tableKey];
+      const header = ['Data/Hora','Instância','Número','Status'];
+      const lines = (s.rows || []).map(r => {
+        const cols = [
+          fmtDate(r.created_at),
+          r.instancia || '',
+          r[LEAD_FIELD] || '',
+          r.status || ''
+        ];
+        return cols.map(v => {
+          const text = (v || '').toString();
+          return /[",\n;]/.test(text)
+            ? '"' + text.replace(/"/g, '""') + '"'
+            : text;
+        }).join(',');
+      });
+
+      const csv = [header.join(','), ...lines].join('\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = 'leads_' + tableKey + '_page' + (state[tableKey].page+1) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    // Monta o dropdown de instâncias disponíveis
+    async function populateInstances() {
+      const headers = {
+        ...BASE_HEADERS,
+        "Range": "0-199"
+      };
+
+      let allRows = [];
+      for (const t of TABLES) {
+        const url = SB_URL + '/rest/v1/' + t.key +
+          '?select=instancia&order=created_at.desc';
+        try {
+          const res = await fetch(url, { headers });
+          if (res.ok) {
+            const data = await res.json();
+            allRows = allRows.concat(data);
+          }
+        } catch(e) {
+          console.error("populateInstances catch", e);
+        }
+      }
+
+      const instSet = new Set();
+      allRows.forEach(r => { if (r.instancia) instSet.add(r.instancia); });
+
+      const combo = document.getElementById('instance-filter');
+      const currentVal = combo.value;
+      combo.innerHTML = '<option value="">Todas</option>';
+      Array.from(instSet).sort().forEach(inst => {
+        const opt = document.createElement('option');
+        opt.value = inst;
+        opt.textContent = inst;
+        combo.appendChild(opt);
+      });
+      if ([...instSet].includes(currentVal)) combo.value = currentVal;
+    }
+
+    // Atualiza tudo: dados tabela + instâncias + timestamp "Atualizado: ..."
+    async function refreshAll(resetPage=true) {
+      renderCardsOnce();
+
+      if (resetPage) {
+        TABLES.forEach(t => { state[t.key].page = 0; });
+      }
+
+      // recarrega cada tabela respeitando filtros atuais
+      for (const t of TABLES) {
+        await loadPageFor(t.key, 0);
+      }
+
+      // atualiza o select de instância
+      await populateInstances();
+
+      document.getElementById('leads-hint').textContent =
+        'Atualizado: ' + new Date().toLocaleString('pt-BR');
+    }
+
+    // Listener dos botões dentro de cada card
+    function onCardButton(e) {
+      const btn = e.currentTarget;
+      const table = btn.getAttribute('data-table');
+      const action = btn.getAttribute('data-action');
+      if (action === 'prev') {
+        loadPageFor(table, -1);
+      } else if (action === 'next') {
+        loadPageFor(table, 1);
+      } else if (action === 'export') {
+        exportCsv(table);
+      }
+    }
+
+    // Eventos dos filtros globais
+    document.getElementById('refresh-btn').addEventListener('click', function(){
+      refreshAll(false);
+    });
+    document.getElementById('date-filter').addEventListener('change', function(){
+      refreshAll(true);
+    });
+    document.getElementById('instance-filter').addEventListener('change', function(){
+      refreshAll(true);
     });
 
-    document.getElementById('instance-filter').addEventListener('change', async (e) => {
-      SELECTED_INSTANCE = e.target.value || "";
-      await atualizarTudo();
-    });
+    // primeira carga
+    refreshAll(true);
 
-    document.getElementById('date-filter').addEventListener('change', async (e) => {
-      SELECTED_DATE = e.target.value || "";
-      await atualizarTudo();
-    });
+    // auto refresh mantendo página atual
+    setInterval(function(){
+      refreshAll(false);
+    }, 30000);
 
-    document.getElementById('export-csv').addEventListener('click', exportarCsv);
-
-    await atualizarTudo();
-    setInterval(atualizarTudo, 10000);
-  }
-
-  init();
+  })();
   </script>
 </body>
 </html>

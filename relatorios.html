@@ -91,7 +91,7 @@
   const supa = AUTH.getSupabaseInfo();
   const SB_URL = supa.url;
   const HEADERS = AUTH.getSupabaseHeaders();
-  const TABLE = "disparos_log";
+  const TABLE = AUTH.getDisparosTable();
 
   const LEAD_FIELD = "numero";
   let SELECTED_DATE = "";

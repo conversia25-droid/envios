@@ -6,6 +6,35 @@
   <title>VPS1 | Paiva Dashboard</title>
   <link rel="stylesheet" href="theme.css"/>
   <link rel="stylesheet" href="style.css"/>
+   <style>
+    .page-header { margin-bottom: 16px; }
+    .page-header h1 { margin: 0 0 6px; font-size: 1.6rem; }
+    .muted { color: #6b7280; }
+    .grid { display: grid; gap: 14px; }
+    @media (min-width: 900px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+    .card {
+      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .card h2 { margin: 0 0 8px; font-size: 1.1rem; }
+    .btn { cursor: pointer; border: none; border-radius: 10px; padding: 10px 12px; font-weight: 700; }
+    .btn-primary { background: #0a8f83; color: #fff; }
+    .btn-outline { background: #fff; color: #111; border: 1px solid #e5e7eb; }
+    .form-group { display: grid; gap: 6px; margin-bottom: 10px; }
+    textarea, input[type="number"], input[type="text"], input[type="url"], input[type="file"] {
+      width: 100%; padding: 10px 12px; border: 1px solid #0b1b3a; border-radius: 10px;
+      background: #fff; box-sizing: border-box; font-family: inherit; font-size: 1rem;
+    }
+    .form-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .form-check input { transform: translateY(1px); }
+    .status-box { display: none; margin-top: 10px; padding: 10px 12px; border: 1px dashed #d1d5db; border-radius: 10px; background: #f9fafb; }
+    .img-preview { display:flex; gap:10px; align-items:center; }
+    .img-preview img { max-width: 240px; border-radius: 10px; border:1px solid #e5e7eb; }
+    .send-type { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+    .send-type label { display:flex; gap:6px; align-items:center; }
+    .hidden { display:none; }
+  </style>
+  
 </head>
 <body>
   <main class="main-content">

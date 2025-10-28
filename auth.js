@@ -36,7 +36,7 @@ const USERS = [
     home: "local.html",                // sua página/template do LOCAL
     evolutionApiUrl: "https://evolocal.zapcompany.com.br",
     apiKey: "nI8wUgkURr6MlgutIYIJ7mELt7HgHMVI",
-    webhookUrl: "https://conversia-n8n.njuzo4.easypanel.host/webhook/local"
+    webhookUrl: "https://workflowslocal.zapcompany.com.br/webhook/envilocal"
   },
 
   // === VPS1 ===
@@ -49,7 +49,19 @@ const USERS = [
     evolutionApiUrl: "https://evovps.zapcompany.com.br",
     apiKey: "3TTUgpZcWM45Z8uS485u9UQ53zPFmR15",
     webhookUrl: "https://conversia-n8n.njuzo4.easypanel.host/webhook/vps1"
-  }
+  },
+
+   // === VPS1 ===
+  {
+  id: "admin",
+  label: "Administrador",
+  email: "admin@paiva.com",
+  password: "senhaAdmin",     // escolha uma senha forte
+  home: "adm.html",
+  evolutionApiUrl: "",
+  apiKey: "",
+  webhookUrl: ""
+}
 ];
 
 // API global compatível com layout.js
