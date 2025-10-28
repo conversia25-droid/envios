@@ -31,7 +31,12 @@
     .form-check input { transform: translateY(1px); }
     .status-box { display: none; margin-top: 10px; padding: 10px 12px; border: 1px dashed #d1d5db; border-radius: 10px; background: #f9fafb; }
     .img-preview { display:flex; gap:10px; align-items:center; }
-    .img-preview img { max-width: 240px; border-radius: 10px; border:1px solid #e5e7eb; }
+    .img-preview img,
+    .img-preview video {
+      max-width: 240px;
+      border-radius: 10px;
+      border:1px solid #e5e7eb;
+    }
     .send-type { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
     .send-type label { display:flex; gap:6px; align-items:center; }
     .hidden { display:none; }
@@ -41,7 +46,7 @@
   <main class="main-content">
     <header class="page-header">
       <h1>Disparos</h1>
-      <div class="muted">Selecione as instâncias, escolha o tipo (mensagens ou imagem), e envie para os leads.</div>
+      <div class="muted">Selecione as instâncias, escolha o tipo (mensagens / imagem / vídeo), e envie para os leads.</div>
     </header>
 
     <div class="grid grid-2">
@@ -61,8 +66,9 @@
         <div class="send-type">
           <label><input type="radio" name="send-type" id="send-type-text" value="text" checked> Mensagens</label>
           <label><input type="radio" name="send-type" id="send-type-image" value="image"> Imagem</label>
+          <label><input type="radio" name="send-type" id="send-type-video" value="video"> Vídeo</label>
         </div>
-        <p class="muted" style="margin-top:6px;">Se escolher <b>Imagem</b>, as mensagens não são obrigatórias.</p>
+        <p class="muted" style="margin-top:6px;">Se escolher <b>Imagem</b> ou <b>Vídeo</b>, as mensagens não são obrigatórias.</p>
       </section>
 
       <!-- Mensagens (até 4) -->
@@ -117,6 +123,27 @@
         </div>
       </section>
 
+      <!-- Vídeo (opcional) -->
+      <section id="video-section" class="card hidden">
+        <h2>3) Vídeo</h2>
+        <div class="form-group">
+          <label class="muted">Selecionar arquivo</label>
+          <input id="video-file" type="file" accept="video/*" />
+          <small class="muted">ou</small>
+          <input id="video-url" type="url" placeholder="Cole uma URL pública do vídeo (https://...)" />
+        </div>
+
+        <div class="form-group">
+          <label class="muted">Legenda (opcional)</label>
+          <input id="video-caption" type="text" placeholder="Texto que acompanha o vídeo" />
+        </div>
+
+        <div class="img-preview" id="video-preview-wrap" style="display:none;">
+          <div class="muted">Preview:</div>
+          <video id="video-preview" controls width="240" style="border-radius:10px;border:1px solid #e5e7eb;"></video>
+        </div>
+      </section>
+
       <!-- Leads -->
       <section class="card">
         <h2>4) Leads</h2>
@@ -164,21 +191,27 @@
       // alternância de tipo
       const msgSec = document.getElementById('messages-section');
       const imgSec = document.getElementById('image-section');
-      const typeText = document.getElementById('send-type-text');
+      const vidSec = document.getElementById('video-section');
+
+      const typeText  = document.getElementById('send-type-text');
       const typeImage = document.getElementById('send-type-image');
+      const typeVideo = document.getElementById('send-type-video');
 
       function toggleType() {
         const isImage = typeImage.checked;
-        if (isImage) {
-          msgSec.classList.add('hidden');
-          imgSec.classList.remove('hidden');
-        } else {
-          imgSec.classList.add('hidden');
-          msgSec.classList.remove('hidden');
-        }
+        const isVideo = typeVideo.checked;
+
+        // mensagens some se estiver mandando imagem OU vídeo
+        msgSec.classList.toggle('hidden', isImage || isVideo);
+
+        // imagem só aparece se "image"
+        imgSec.classList.toggle('hidden', !isImage);
+
+        // vídeo só aparece se "video"
+        vidSec.classList.toggle('hidden', !isVideo);
       }
-      [typeText, typeImage].forEach(r => r.addEventListener('change', toggleType));
-      toggleType();
+      [typeText, typeImage, typeVideo].forEach(r => r.addEventListener('change', toggleType));
+      toggleType(); // estado inicial
 
       // preview imagem
       const fileInput = document.getElementById('image-file');
@@ -197,6 +230,25 @@
       urlInput.addEventListener('input', () => {
         const v = urlInput.value.trim();
         showPreview(v && /^https?:\/\//i.test(v) ? v : '');
+      });
+
+      // preview vídeo
+      const videoFile = document.getElementById('video-file');
+      const videoUrl  = document.getElementById('video-url');
+      const videoWrap = document.getElementById('video-preview-wrap');
+      const videoPrev = document.getElementById('video-preview');
+      function showVideoPreview(src) {
+        if (!src) { videoWrap.style.display = 'none'; videoPrev.src = ''; return; }
+        videoPrev.src = src; videoWrap.style.display = 'flex';
+      }
+      videoFile.addEventListener('change', () => {
+        const f = videoFile.files[0];
+        if (f) showVideoPreview(URL.createObjectURL(f));
+        else showVideoPreview('');
+      });
+      videoUrl.addEventListener('input', () => {
+        const v = videoUrl.value.trim();
+        showVideoPreview(v && /^https?:\/\//i.test(v) ? v : '');
       });
 
       // enviar

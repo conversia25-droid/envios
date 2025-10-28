@@ -33,7 +33,7 @@ const USERS = [
     label: "Local",
     email: "local@paiva.com",
     password: "senhaLocal",
-    home: "local.html",                // sua página/template do LOCAL
+    home: "index.html",                // sua página/template do LOCAL
     evolutionApiUrl: "https://evolocal.zapcompany.com.br",
     apiKey: "nI8wUgkURr6MlgutIYIJ7mELt7HgHMVI",
     webhookUrl: "https://workflowslocal.zapcompany.com.br/webhook/envilocal"
@@ -45,7 +45,7 @@ const USERS = [
     label: "VPS1",
     email: "vps1@paiva.com",
     password: "senhaVps1",
-    home: "vps1.html",                 // sua página/template da VPS1
+    home: "index.html",                 // sua página/template da VPS1
     evolutionApiUrl: "https://evovps.zapcompany.com.br",
     apiKey: "3TTUgpZcWM45Z8uS485u9UQ53zPFmR15",
     webhookUrl: "https://conversia-n8n.njuzo4.easypanel.host/webhook/vps1"

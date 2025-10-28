@@ -150,6 +150,7 @@
         <a href="instancias.html"><span>⚙️</span> Instâncias</a>
         <a href="disparos.html"><span>🗂️</span> Disparos</a>
         <a href="relatorios.html"><span>📊</span> Relatórios</a>
+        <a href="adm.html"><span>⚙️</span> Administrativo</a>
       </nav>
       <div class="side-footer">
         <button id="logout-btn" class="btn btn-outline" style="width:100%;margin-top:10px;">Sair</button>

@@ -1,9 +1,10 @@
 /* =======================================================
-   script.js — COMPLETO (Mensagens OU Imagem)
+   script.js — COMPLETO (Mensagens | Imagem | Vídeo)
    - Multi-tenant (lê evolutionApiUrl/apiKey/webhook do AUTH.getTenant())
    - Gestão de instâncias (listar/criar/conectar/QR/pareamento/logout/deletar)
    - Disparos: lista instâncias conectadas e envia campanha
-   - IMAGEM opcional: upload para Supabase Storage (bucket público) ou URL direta
+   - IMAGEM/VÍDEO opcionais:
+        -> upload para Supabase Storage (bucket público) OU URL direta já pública
    - Auto-init por página
    ======================================================= */
 
@@ -30,18 +31,32 @@ async function readSafeText(res) { try { return await res.text(); } catch { retu
 
 /* ======== Utils ======== */
 function _slugId(name) { return 'inst-' + String(name).replace(/[^a-zA-Z0-9_-]/g, '_'); }
-// Tipo de envio (fallback para 'text' se não existir o HTML dos rádios)
+
+// Tipo de envio (fallback pra 'text' se os rádios não existirem ainda)
+// Agora suporta text | image | video
 function __getSendType() {
-  const imgOpt = document.getElementById('send-type-image');
-  return (imgOpt && imgOpt.checked) ? 'image' : 'text';
+  const textOpt  = document.getElementById('send-type-text');
+  const imgOpt   = document.getElementById('send-type-image');
+  const vidOpt   = document.getElementById('send-type-video');
+
+  if (vidOpt && vidOpt.checked)   return 'video';
+  if (imgOpt && imgOpt.checked)   return 'image';
+  if (textOpt && textOpt.checked) return 'text';
+  return 'text';
 }
 
 /* =======================================================
-   SUPABASE STORAGE — AJUSTE APENAS O BUCKET SE QUISER
+   SUPABASE STORAGE — ajuste BUCKET se quiser
    ======================================================= */
 const SB_URL    = "https://kqewpyvikkzwytmzfjhw.supabase.co";  // seu projeto
 const SB_KEY    = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZXdweXZpa2t6d3l0bXpmamh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMyNzkyODMsImV4cCI6MjA2ODg1NTI4M30.uooRwmYB8FO4C5wEDzWY2WCAJf61-eG3zhDPOyhThVE"; // anon key
-const SB_BUCKET = "whats-media"; // <= NOME do bucket público que você criou
+const SB_BUCKET = "whats-media"; // bucket PÚBLICO (imgs e vídeos podem conviver aqui)
+
+/* upload genérico pro Supabase.
+   Eu vou separar em duas funções pra clareza semântica:
+   - uploadImageToSupabase(file)
+   - uploadVideoToSupabase(file)
+   Mas as duas fazem praticamente o mesmo, só muda a pastinha. */
 
 async function uploadImageToSupabase(file) {
   if (!file) return "";
@@ -71,6 +86,34 @@ async function uploadImageToSupabase(file) {
   return `${SB_URL}/storage/v1/object/public/${SB_BUCKET}/${path}`;
 }
 
+async function uploadVideoToSupabase(file) {
+  if (!file) return "";
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth()+1).padStart(2,'0');
+  const d = String(now.getDate()).padStart(2,'0');
+  const safeName = (file.name || `video_${Date.now()}.mp4`).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `videos/${y}/${m}/${d}/${Date.now()}_${safeName}`;
+
+  const url = `${SB_URL}/storage/v1/object/${encodeURIComponent(SB_BUCKET)}/${encodeURIComponent(path)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${SB_KEY}`,
+      "apikey": SB_KEY,
+      "Content-Type": file.type || "application/octet-stream"
+    },
+    body: file
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Falha no upload do vídeo: HTTP ${res.status} – ${txt.slice(0,180)}`);
+  }
+
+  return `${SB_URL}/storage/v1/object/public/${SB_BUCKET}/${path}`;
+}
+
 /* =======================================================
    QR / Pairing helpers (instâncias)
    ======================================================= */
@@ -89,15 +132,26 @@ function resolveQrImageFromPayload(payload) {
       continue;
     }
     if (/^https?:\/\//i.test(val)) return val;
-    if (/^[A-Za-z0-9+/=]+$/.test(val) && val.length > 100) return `data:image/png;base64,${val}`;
+    if (/^[A-Za-z0-9+/=]+$/.test(val) && val.length > 100) {
+      return `data:image/png;base64,${val}`;
+    }
   }
-  if (typeof payload === "string") { try { return resolveQrImageFromPayload(JSON.parse(payload)); } catch {} }
+  if (typeof payload === "string") {
+    try { return resolveQrImageFromPayload(JSON.parse(payload)); } catch {}
+  }
   return null;
 }
 function resolvePairingCodeFromPayload(payload) {
   if (!payload) return null;
-  const candidates = [payload?.qrcode?.pairingCode, payload?.pairingCode, payload?.qrcode?.code, payload?.code].filter(Boolean);
-  for (const c of candidates) if (typeof c === "string" && c.trim()) return c.trim();
+  const candidates = [
+    payload?.qrcode?.pairingCode,
+    payload?.pairingCode,
+    payload?.qrcode?.code,
+    payload?.code
+  ].filter(Boolean);
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+  }
   return null;
 }
 
@@ -197,7 +251,9 @@ function ensurePairingDom() {
         await navigator.clipboard.writeText(codeEl.textContent.trim());
         copyBtn.textContent = "Copiado!";
         setTimeout(() => (copyBtn.textContent = "Copiar"), 1200);
-      } catch { alert("Não foi possível copiar. Copie manualmente."); }
+      } catch {
+        alert("Não foi possível copiar. Copie manualmente.");
+      }
     };
   }
   return pairingWrap;
@@ -212,7 +268,11 @@ function showPairingCode(code, expiresAtMs) {
   if (expiresAtMs && countdownEl) {
     pairingCountdownTimer = setInterval(() => {
       const diff = expiresAtMs - Date.now();
-      if (diff <= 0) { countdownEl.textContent = " (expirado)"; clearInterval(pairingCountdownTimer); return; }
+      if (diff <= 0) {
+        countdownEl.textContent = " (expirado)";
+        clearInterval(pairingCountdownTimer);
+        return;
+      }
       const s = Math.ceil(diff / 1000);
       countdownEl.textContent = ` (expira em ${s}s)`;
     }, 1000);
@@ -286,7 +346,10 @@ async function fetchInstances() {
 
   try {
     const res = await api("instance/fetchInstances", { method: "GET" });
-    if (!res.ok) { const txt = await readSafeText(res); throw new Error(`HTTP ${res.status}: ${txt.slice(0,180)}`); }
+    if (!res.ok) {
+      const txt = await readSafeText(res);
+      throw new Error(`HTTP ${res.status}: ${txt.slice(0,180)}`);
+    }
     const data = await res.json();
     const list = Array.isArray(data) ? data : [];
 
@@ -374,7 +437,6 @@ window.createInstance = async function(instanceName) {
   if (messageElement) messageElement.textContent = "Enviando requisição...";
   if (createButton) createButton.disabled = true;
 
-  // Aceita tanto servers antigos (integration) quanto novos (provider)
   const payload = { instanceName, qrcode: true, integration: "WHATSAPP-BAILEYS" };
 
   try {
@@ -382,7 +444,6 @@ window.createInstance = async function(instanceName) {
     const txt = await readSafeText(res);
     let data = {}; try { data = JSON.parse(txt || "{}"); } catch {}
 
-    // ✅ Corrigido: considere sucesso por HTTP 2xx ou presença de "instance"
     if (!res.ok && !data.instance) {
       throw new Error(data.message || txt || `HTTP ${res.status}`);
     }
@@ -391,25 +452,24 @@ window.createInstance = async function(instanceName) {
       messageElement.innerHTML = `<span style="color: green;">✅ Instância "${instanceName}" criada.</span>`;
     }
 
-    // ✅ NOVO: se o create já trouxe QR ou pairing code, mostre imediatamente
     const imgFromCreate =
       resolveQrImageFromPayload(data) ||
       resolveQrImageFromPayload(data.qrcode) ||
-      data?.qrcode?.base64; // já vem como data:image/png;base64,...
+      data?.qrcode?.base64;
 
     const pairFromCreate =
       resolvePairingCodeFromPayload(data) ||
       resolvePairingCodeFromPayload(data.qrcode) ||
       data?.qrcode?.code;
 
-    const modal = document.getElementById("qr-modal");
+    const modal     = document.getElementById("qr-modal");
     const modalName = document.getElementById("modal-instance-name");
-    const qrStatus = document.getElementById("qr-status-message");
-    const qrImage  = document.getElementById("qrcode-image");
+    const qrStatus  = document.getElementById("qr-status-message");
+    const qrImage   = document.getElementById("qrcode-image");
 
     if (modalName) modalName.textContent = instanceName;
-    if (modal) modal.style.display = "block";          // modal já existe no HTML:contentReference[oaicite:3]{index=3}
-    ensureQrToolbar();                                  // toolbar/refresh já pronta:contentReference[oaicite:4]{index=4}
+    if (modal) modal.style.display = "block";
+    ensureQrToolbar();
     hidePairingCode();
     stopQrCountdown();
 
@@ -419,39 +479,47 @@ window.createInstance = async function(instanceName) {
         qrImage.src = imgFromCreate;
         qrImage.style.display = "block";
       }
-      checkConnectionStatus(instanceName);             // segue o polling existente:contentReference[oaicite:5]{index=5}
+      checkConnectionStatus(instanceName);
       return;
     }
 
     if (pairFromCreate) {
       if (qrStatus) qrStatus.innerHTML = "Conecte-se com o código de pareamento:";
-      showPairingCode(pairFromCreate);                 // componente de pairing já existe:contentReference[oaicite:6]{index=6}
+      showPairingCode(pairFromCreate);
       if (qrImage) { qrImage.style.display = "none"; qrImage.src = ""; }
       checkConnectionStatus(instanceName);
       return;
     }
 
-    // Se não veio QR/código no create, cai no fluxo tradicional
-    await connectInstance(instanceName);                // usa rotas /connect e polling:contentReference[oaicite:7]{index=7}
+    await connectInstance(instanceName);
   } catch (error) {
     console.error("Erro ao criar instância:", error);
-    if (messageElement) messageElement.innerHTML = `<span style="color: red;">❌ ${error.message}</span>`;
+    if (messageElement) {
+      messageElement.innerHTML = `<span style="color: red;">❌ ${error.message}</span>`;
+    }
   } finally {
     if (createButton) createButton.disabled = false;
   }
 };
+
 window.deleteInstance = async function(instanceName) {
   if (!confirm(`Tem certeza que deseja DELETAR a instância "${instanceName}"?`)) return;
   try {
     let res = await api(`instance/delete/${encodeURIComponent(instanceName)}`, { method: "DELETE" });
-    if (!res.ok) { res = await api(`instance/remove/${encodeURIComponent(instanceName)}`, { method: "DELETE" }); }
+    if (!res.ok) {
+      res = await api(`instance/remove/${encodeURIComponent(instanceName)}`, { method: "DELETE" });
+    }
     if (!res.ok) {
       const txt = await readSafeText(res);
       throw new Error(`HTTP ${res.status}: ${txt.slice(0, 180)}`);
     }
-  } catch (e) { alert("Falha ao deletar: " + e.message); }
-  finally { fetchInstances(); }
+  } catch (e) {
+    alert("Falha ao deletar: " + e.message);
+  } finally {
+    fetchInstances();
+  }
 };
+
 window.logoutInstance = async function(instanceName) {
   try {
     const res = await api(`instance/logout/${encodeURIComponent(instanceName)}`, { method: "DELETE" });
@@ -459,23 +527,27 @@ window.logoutInstance = async function(instanceName) {
       const txt = await readSafeText(res);
       throw new Error(`HTTP ${res.status}: ${txt.slice(0, 180)}`);
     }
-  } catch (e) { console.error("Erro no logout:", e); }
-  finally { fetchInstances(); }
+  } catch (e) {
+    console.error("Erro no logout:", e);
+  } finally {
+    fetchInstances();
+  }
 };
 
 /* conectar/ver QR */
 window.connectInstance = async function(instanceName) {
-  const modal = document.getElementById("qr-modal");
+  const modal     = document.getElementById("qr-modal");
   const modalName = document.getElementById("modal-instance-name");
-  const qrStatus = document.getElementById("qr-status-message");
-  const qrImage = document.getElementById("qrcode-image");
+  const qrStatus  = document.getElementById("qr-status-message");
+  const qrImage   = document.getElementById("qrcode-image");
+
   if (window.connectionIntervalId) clearInterval(window.connectionIntervalId);
   stopQrCountdown();
   hidePairingCode();
 
   const setMsg = (t, type = "info") => {
     if (!qrStatus) return;
-    qrStatus.style.color = type === "error" ? "red" : (type === "success" ? "green" : "black");
+    qrStatus.style.color = (type === "error") ? "red" : ((type === "success") ? "green" : "black");
     qrStatus.innerHTML = t;
   };
 
@@ -523,10 +595,14 @@ window.connectInstance = async function(instanceName) {
     console.error("Erro de conexão:", error);
   }
 };
+
 function checkConnectionStatus(instanceName) {
   const qrStatus = document.getElementById("qr-status-message");
-  const qrImage = document.getElementById("qrcode-image");
-  if (!qrStatus || !qrImage) { if (window.connectionIntervalId) clearInterval(window.connectionIntervalId); return; }
+  const qrImage  = document.getElementById("qrcode-image");
+  if (!qrStatus || !qrImage) {
+    if (window.connectionIntervalId) clearInterval(window.connectionIntervalId);
+    return;
+  }
 
   const showQR = (src, expiresAtMs) => {
     hidePairingCode();
@@ -567,7 +643,11 @@ function checkConnectionStatus(instanceName) {
         if (src) { showQR(src, expiresAtMs); return; }
 
         const pairingCode = resolvePairingCodeFromPayload(state) || resolvePairingCodeFromPayload(text);
-        if (pairingCode) { hideQR("Conecte-se com o código de pareamento:"); showPairingCode(pairingCode, expiresAtMs); return; }
+        if (pairingCode) {
+          hideQR("Conecte-se com o código de pareamento:");
+          showPairingCode(pairingCode, expiresAtMs);
+          return;
+        }
 
         src = await tryGetQRCode(instanceName);
         if (src) { showQR(src); return; }
@@ -608,12 +688,14 @@ async function getApiStatus() {
 }
 
 /* =======================================================
-   DISPAROS — preencher instâncias conectadas (por tenant)
+   DISPAROS — preencher instâncias conectadas
    ======================================================= */
 async function fetchInstancesForDisparos() {
   const grid = document.getElementById('instance-checkboxes');
   const hint = document.getElementById('instance-checkboxes-hint');
-  if (grid) grid.innerHTML = `<div class="muted">Carregando instâncias...</div>`;
+  if (grid) {
+    grid.innerHTML = `<div class="muted">Carregando instâncias...</div>`;
+  }
 
   try {
     const res = await api('instance/fetchInstances', { method: 'GET' });
@@ -650,29 +732,36 @@ async function fetchInstancesForDisparos() {
     }
   } catch (err) {
     console.error('Erro ao buscar instâncias (Disparos):', err);
-    if (grid) grid.innerHTML = `<div class="danger">Falha ao carregar instâncias: ${err.message}</div>`;
+    if (grid) {
+      grid.innerHTML = `<div class="danger">Falha ao carregar instâncias: ${err.message}</div>`;
+    }
     if (hint) hint.textContent = 'Falha ao carregar as instâncias.';
   }
 }
 
 /* =======================================================
-   DISPAROS — envio de campanha (Mensagens OU Imagem)
+   DISPAROS — envio de campanha
+   Agora: Mensagens | Imagem | Vídeo
    ======================================================= */
 window.sendBulkMessages = async function () {
-  const status = document.getElementById('send-status');
-  const smsg = document.getElementById('status-message');
-  const pmsg = document.getElementById('progress-message');
+  const status  = document.getElementById('send-status');
+  const smsg    = document.getElementById('status-message');
+  const pmsg    = document.getElementById('progress-message');
   const sendBtn = document.getElementById('send-bulk-btn');
 
-  const sendType = __getSendType(); // 'text' | 'image'
+  const sendType = __getSendType(); // 'text' | 'image' | 'video'
 
   const updateStatus = (message, isError = false) => {
     if (smsg) smsg.textContent = message;
     if (status) status.style.display = 'block';
     if (smsg) smsg.style.color = isError ? '#c62828' : '#111';
   };
-  const updateProgress = (message) => { if (pmsg) pmsg.textContent = message || ''; };
-  const disableSend = (dis) => { if (sendBtn) sendBtn.disabled = !!dis; };
+  const updateProgress = (message) => {
+    if (pmsg) pmsg.textContent = message || '';
+  };
+  const disableSend = (dis) => {
+    if (sendBtn) sendBtn.disabled = !!dis;
+  };
 
   try {
     disableSend(true);
@@ -685,54 +774,93 @@ window.sendBulkMessages = async function () {
 
     // Leads
     const raw = (document.getElementById('lead-list')?.value || '').trim();
-    const leads = raw.split(/\r?\n/).map(s => s.replace(/\D/g,'')).filter(Boolean);
+    const leads = raw
+      .split(/\r?\n/)
+      .map(s => s.replace(/\D/g,''))
+      .filter(Boolean);
     if (!leads.length) throw new Error('Cole a lista de leads (um por linha).');
 
-    const delaySec = Math.max(0, parseInt(document.getElementById('delay-time-seconds')?.value || '0', 10));
+    // Delay
+    const delaySec = Math.max(
+      0,
+      parseInt(document.getElementById('delay-time-seconds')?.value || '0', 10)
+    );
     const cfg = __getTenantCfg();
 
-    // ===== Por tipo =====
+    // ===== Conteúdo da campanha por tipo =====
     let messages = [];
     let media = null;
 
     if (sendType === 'text') {
+      // até 4 mensagens
       const msgBoxes = Array.from(document.querySelectorAll('#message-config-container textarea'));
       messages = msgBoxes.map(t => t.value.trim()).filter(Boolean);
-      if (!messages.length) throw new Error('Preencha ao menos 1 mensagem (ou mude o tipo para Imagem).');
-    } else {
-      // tipo imagem: não exige mensagens; precisa de arquivo OU URL válida
+      if (!messages.length) {
+        throw new Error('Preencha ao menos 1 mensagem (ou mude o tipo para Imagem/Vídeo).');
+      }
+    }
+
+    if (sendType === 'image') {
+      // precisa de arquivo OU URL de imagem
       const fileInput = document.getElementById('image-file');
       const urlInput  = document.getElementById('image-url');
       const caption   = (document.getElementById('image-caption')?.value || "").trim();
 
-      const file = fileInput?.files?.[0];
+      const file      = fileInput?.files?.[0];
       const directUrl = urlInput?.value?.trim();
 
-      let imageUrl = "";
+      let finalUrl = "";
       if (file) {
         updateProgress('Enviando imagem para o Supabase...');
-        imageUrl = await uploadImageToSupabase(file);
+        finalUrl = await uploadImageToSupabase(file);
       } else if (directUrl && /^https?:\/\//i.test(directUrl)) {
-        imageUrl = directUrl;
+        finalUrl = directUrl;
       } else {
-        throw new Error('Selecione um arquivo de imagem ou informe uma URL pública.');
+        throw new Error('Selecione um arquivo de imagem ou informe uma URL pública de imagem.');
       }
 
-      media = { type: 'image', url: imageUrl, caption };
-      messages = []; // explícito
+      media = { type: 'image', url: finalUrl, caption };
+      messages = []; // override
     }
 
-    // payload da campanha ao n8n (webhook do tenant atual)
+    if (sendType === 'video') {
+      // precisa de arquivo OU URL de vídeo
+      const fileInputV = document.getElementById('video-file');
+      const urlInputV  = document.getElementById('video-url');
+      const captionV   = (document.getElementById('video-caption')?.value || "").trim();
+
+      const fileV      = fileInputV?.files?.[0];
+      const directUrlV = urlInputV?.value?.trim();
+
+      let finalUrlV = "";
+      if (fileV) {
+        updateProgress('Enviando vídeo para o Supabase...');
+        finalUrlV = await uploadVideoToSupabase(fileV);
+      } else if (directUrlV && /^https?:\/\//i.test(directUrlV)) {
+        finalUrlV = directUrlV;
+      } else {
+        throw new Error('Selecione um arquivo de vídeo ou informe uma URL pública de vídeo.');
+      }
+
+      media = { type: 'video', url: finalUrlV, caption: captionV };
+      messages = []; // override
+    }
+
+    // ===== Monta o payload final pro n8n/webhook =====
     const payload = {
       tenant: {
         baseUrl: cfg.EVOLUTION_API_URL,
-        apiKey: cfg.API_KEY
+        apiKey:  cfg.API_KEY
       },
       instances,
-      messages,            // vazio no modo imagem
       leads,
       delaySeconds: delaySec,
-      media                // null no modo mensagens
+
+      // bloco de texto (se tiver)
+      messages, // array de strings; vazio nos modos image/video
+
+      // bloco de mídia (se tiver)
+      media     // { type:"image"|"video", url:"", caption:"" } ou null
     };
 
     const res = await fetch(cfg.DEFAULT_WEBHOOK_URL, {
@@ -748,12 +876,23 @@ window.sendBulkMessages = async function () {
 
     if (sendType === 'text') {
       updateStatus('✅ Campanha de MENSAGENS enviada ao n8n com sucesso.');
-      updateProgress(`Instâncias: ${instances.join(', ')} | Leads: ${leads.length} | Mensagens: ${messages.length}`);
-    } else {
+      updateProgress(
+        `Instâncias: ${instances.join(', ')} | Leads: ${leads.length} | Mensagens: ${messages.length}`
+      );
+    } else if (sendType === 'image') {
       updateStatus('✅ Campanha de IMAGEM enviada ao n8n com sucesso.');
       const fileName = (media?.url || '').split('/').pop();
-      updateProgress(`Instâncias: ${instances.join(', ')} | Leads: ${leads.length} | Imagem: ${fileName || 'URL'}`);
+      updateProgress(
+        `Instâncias: ${instances.join(', ')} | Leads: ${leads.length} | Imagem: ${fileName || 'URL'}`
+      );
+    } else {
+      updateStatus('✅ Campanha de VÍDEO enviada ao n8n com sucesso.');
+      const fileNameV = (media?.url || '').split('/').pop();
+      updateProgress(
+        `Instâncias: ${instances.join(', ')} | Leads: ${leads.length} | Vídeo: ${fileNameV || 'URL'}`
+      );
     }
+
   } catch (e) {
     console.error(e);
     updateStatus(`❌ Erro: ${e.message || e}`, true);
@@ -767,15 +906,14 @@ window.sendBulkMessages = async function () {
    AUTO-INIT — detecta a página e inicializa
    ======================================================= */
 (function initPageEnhancers() {
-  // Página Instâncias: se houver grid e/ou sumário, busca instâncias
+  // Página Instâncias
   if (document.getElementById("instances-grid") || document.getElementById("summary-open")) {
     fetchInstances();
   }
 
-  // Página Disparos: auto-carrega a lista de instâncias do tenant atual
+  // Página Disparos
   if (document.getElementById('instance-checkboxes')) {
     fetchInstancesForDisparos();
-    // Botão manual de recarregar (se existir)
     const reloadBtn = document.getElementById('reload-instances');
     if (reloadBtn) reloadBtn.addEventListener('click', fetchInstancesForDisparos);
   }
