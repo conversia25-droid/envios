@@ -36,7 +36,7 @@ const USERS = [
     home: "index.html",                // sua página/template do LOCAL
     evolutionApiUrl: "https://evolocal.zapcompany.com.br",
     apiKey: "nI8wUgkURr6MlgutIYIJ7mELt7HgHMVI",
-    webhookUrl: "https://workflowslocal.zapcompany.com.br/webhook/envilocal"
+    webhookUrl: "https://conversia-n8n.njuzo4.easypanel.host/webhook/local"
   },
 
   // === VPS1 ===
@@ -136,3 +136,4 @@ window.AUTH = {
     return (TABLES_BY_TENANT[id]?.disparos) || TABLES_BY_TENANT.prod.disparos;
   },
 };
+
