@@ -136,4 +136,3 @@ window.AUTH = {
     return (TABLES_BY_TENANT[id]?.disparos) || TABLES_BY_TENANT.prod.disparos;
   },
 };
-
