@@ -150,6 +150,7 @@
         <a href="instancias.html"><span>⚙️</span> Instâncias</a>
         <a href="disparos.html"><span>🗂️</span> Disparos</a>
         <a href="relatorios.html"><span>📊</span> Relatórios</a>
+        <a href="maturador.html"><span>🔥</span> Maturador</a>
         <a href="adm.html"><span>⚙️</span> Administrativo</a>
       </nav>
       <div class="side-footer">
@@ -245,3 +246,44 @@
     }
   } catch {}
 })();
+
+// Quick evolution selector appended safely
+window.addEventListener('DOMContentLoaded', () => {
+  try {
+    const user = (window.AUTH && AUTH.getUser && AUTH.getUser()) || null;
+    const isAdmin = user && (user.role === 'admin' || /admin|root/i.test(user.email||''));
+    const t = (window.AUTH && AUTH.getTenant && AUTH.getTenant()) || null;
+    if (!isAdmin || !t) return;
+    const footer = document.querySelector('.side-footer') || document.querySelector('.sidebar-card');
+    if (!footer) return;
+    const wrap = document.createElement('div');
+    wrap.style.marginTop = '10px';
+    const lab = document.createElement('label');
+    lab.className = 'muted';
+    lab.style.fontSize = '.8rem';
+    lab.style.display = 'block';
+    lab.style.marginBottom = '4px';
+    lab.textContent = 'Evolution atual';
+    wrap.appendChild(lab);
+    const sel = document.createElement('select');
+    sel.style.width = '100%';
+    wrap.appendChild(sel);
+    footer.appendChild(wrap);
+    const list = [
+      { label: '🌐 Principal', evolutionApiUrl: t.evolutionApiUrl || t.EVOLUTION_API_URL, apiKey: t.apiKey || t.API_KEY },
+      ...((t.evolutionsExtras)||[])
+    ].filter(x => x && x.evolutionApiUrl);
+    sel.innerHTML = list.map(x => `<option value="${x.evolutionApiUrl}|${x.apiKey||''}">${x.label}</option>`).join('');
+    const curUrl = localStorage.getItem('EVO_URL_OVERRIDE__'+t.id) || (t.evolutionApiUrl || t.EVOLUTION_API_URL) || '';
+    const curKey = localStorage.getItem('EVO_KEY_OVERRIDE__'+t.id) || (t.apiKey || t.API_KEY) || '';
+    const curVal = curUrl + '|' + curKey;
+    for (const opt of sel.options){ if (opt.value === curVal) { sel.value = curVal; break; } }
+    sel.addEventListener('change', () => {
+      const [url, key] = sel.value.split('|');
+      localStorage.setItem('EVO_URL_OVERRIDE__'+t.id, String(url||''));
+      localStorage.setItem('EVO_KEY_OVERRIDE__'+t.id, String(key||''));
+      location.reload();
+    });
+  } catch(e){}
+});
+

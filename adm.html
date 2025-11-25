@@ -254,7 +254,213 @@
     <section class="relatorios-wrapper" id="relatorios-wrapper">
       <!-- cards gerados dinamicamente -->
     </section>
-  </main>
+  
+<section class="card">
+  <h3 style="margin-top:0">EvolutionAPI (Admin)</h3>
+  <p class="muted">Defina aqui a URL e a API Key que irão sobrescrever, somente para o <b>tenant</b> logado, a configuração padrão do auth.js.</p>
+  <div class="form-row">
+    <div>
+      <label class="muted">EvolutionAPI URL</label>
+      <input type="text" id="adm-evo-url" placeholder="https://maturaevo.zapcompany.com.br">
+    </div>
+    <div>
+      <label class="muted">API Key</label>
+      <input type="text" id="adm-evo-key" placeholder="cole sua API Key">
+    </div>
+  </div>
+  <div class="form-row" style="margin-top:8px;">
+    <button class="btn btn-primary" id="adm-save-evo">Salvar</button>
+    <button class="btn btn-outline" id="adm-clear-evo">Limpar</button>
+    <span class="muted" id="adm-evo-msg"></span>
+  </div>
+</section>
+
+<section class="card">
+  <h3 style="margin-top:0">Conectar Número (Admin)</h3>
+  <p class="muted">Crie/pareie uma instância e leia o QR Code neste painel.</p>
+
+  <div class="form-row">
+    <div>
+      <label class="muted">Nome da instância</label>
+      <input type="text" id="adm-inst-name" placeholder="ex.: chip01, suporte02">
+    </div>
+    <div style="display:flex; gap:8px; align-items:flex-end;">
+      <button class="btn btn-primary" id="adm-inst-create">Criar</button>
+      <button class="btn" id="adm-inst-start">Iniciar</button>
+      <button class="btn btn-outline" id="adm-inst-stop">Parar</button>
+      <button class="btn btn-outline" id="adm-inst-del">Excluir</button>
+    </div>
+  </div>
+
+  <div class="form-row" style="margin-top:8px;">
+    <button class="btn" id="adm-show-qr">Mostrar QR</button>
+    <span class="muted" id="adm-inst-state">—</span>
+  </div>
+
+  <div id="adm-qr-wrap" style="display:none; margin-top:10px;">
+    <div class="muted">Leia o QR no WhatsApp do aparelho.</div>
+    <img id="adm-qr-img" alt="QR Code" style="max-width:280px; border-radius:10px; border:1px solid rgba(0,0,0,.08);" />
+  </div>
+</section>
+
+<script>
+(function adminEnhancer(){
+  if(!window.AUTH || !AUTH.isLoggedIn || !AUTH.isLoggedIn()){ return; }
+  const u = AUTH.getUser && AUTH.getUser();
+  const isAdmin = u && (u.role === 'admin' || /admin|root/i.test(u.email||''));
+  // Mesmo que não haja role formal, vamos permitir aqui para o admin do painel
+  // (ajuste conforme seu controle de permissões)
+  try {
+    // Preencher campos com overrides atuais
+    const cur = (window.getEvolutionOverride && getEvolutionOverride()) || {url:'', key:''};
+    const urlEl = document.getElementById('adm-evo-url');
+    const keyEl = document.getElementById('adm-evo-key');
+    if(urlEl) urlEl.value = cur.url || 'https://maturaevo.zapcompany.com.br';
+    if(keyEl) keyEl.value = cur.key || '429683C4C977415CAAFCCE10F7D57E11';
+
+    const msg = document.getElementById('adm-evo-msg');
+    const save = document.getElementById('adm-save-evo');
+    const clear= document.getElementById('adm-clear-evo');
+    if(save) save.onclick = () => {
+      const ok = window.setEvolutionOverride && setEvolutionOverride(urlEl.value.trim(), keyEl.value.trim());
+      if(msg) msg.textContent = ok ? 'Salvo!' : 'Falhou ao salvar';
+      setTimeout(()=>{ if(msg) msg.textContent=''; }, 1200);
+    };
+    if(clear) clear.onclick = () => {
+      const t = (window.AUTH && AUTH.getTenant && AUTH.getTenant()) || { id:'prod' };
+      const id = t.id || 'prod';
+      localStorage.removeItem('EVO_URL_OVERRIDE__'+id);
+      localStorage.removeItem('EVO_KEY_OVERRIDE__'+id);
+      if(msg) msg.textContent = 'Limpado!';
+      setTimeout(()=>{ if(msg) msg.textContent=''; }, 1200);
+    };
+
+    // Conectar instância com QR
+    const nameEl = document.getElementById('adm-inst-name');
+    const stateEl= document.getElementById('adm-inst-state');
+    const qrWrap = document.getElementById('adm-qr-wrap');
+    const qrImg  = document.getElementById('adm-qr-img');
+
+    async function _api(p, opts){ return await api(p, opts); }
+
+    async function checkState(inst){
+      try{
+        const r = await _api('instance/connectionState/'+encodeURIComponent(inst), { method:'GET' });
+        const s = r.ok ? (await r.text()) : ('HTTP '+r.status);
+        if(stateEl) stateEl.textContent = 'Estado: '+ (s || 'desconhecido');
+      }catch(e){ if(stateEl) stateEl.textContent = 'Estado: erro: '+e.message; }
+    }
+
+    async function showQR(inst){
+      try {
+        if(qrWrap) qrWrap.style.display = 'block';
+        if(stateEl) stateEl.textContent = 'Gerando QR...';
+        const tryPaths = [
+          'instance/qrcode/'+encodeURIComponent(inst)+'?format=base64',
+          'instance/qr/'+encodeURIComponent(inst)+'?format=base64',
+          'instance/qr/'+encodeURIComponent(inst)
+        ];
+        for(const p of tryPaths){
+          const res = await _api(p, { method:'GET' });
+          if(res.ok){
+            const t = await res.text();
+            if(/^data:image\/png;base64,/.test(t) || /^data:/.test(t)){
+              if(qrImg) qrImg.src = t;
+              if(stateEl) stateEl.textContent = 'Aguardando leitura...';
+              return;
+            }else{
+              // pode vir somente o base64 puro
+              if(qrImg) qrImg.src = 'data:image/png;base64,'+t;
+              if(stateEl) stateEl.textContent = 'Aguardando leitura...';
+              return;
+            }
+          }
+        }
+        if(stateEl) stateEl.textContent = 'Não foi possível obter o QR.';
+      }catch(e){
+        if(stateEl) stateEl.textContent = 'Erro ao obter QR: '+e.message;
+      }
+    }
+
+    function instName(){ return (nameEl && nameEl.value.trim()) || ''; }
+
+    const btnCreate = document.getElementById('adm-inst-create');
+    const btnStart  = document.getElementById('adm-inst-start');
+    const btnStop   = document.getElementById('adm-inst-stop');
+    const btnDel    = document.getElementById('adm-inst-del');
+    const btnQR     = document.getElementById('adm-show-qr');
+
+    if(btnCreate) btnCreate.onclick = async () => {
+      const nn = instName(); if(!nn) return alert('Informe o nome da instância.');
+      const r = await _api('instance/create', { method:'POST', body: JSON.stringify({ instanceName: nn }) });
+      const t = await r.text();
+      alert(r.ok ? 'Criada: '+t : ('Falha: '+t));
+    };
+    if(btnStart) btnStart.onclick = async () => {
+      const nn = instName(); if(!nn) return alert('Informe o nome da instância.');
+      const r = await _api('instance/start/'+encodeURIComponent(nn), { method:'POST' });
+      const t = await r.text();
+      alert(r.ok ? 'Iniciada: '+t : ('Falha: '+t));
+    };
+    if(btnStop) btnStop.onclick = async () => {
+      const nn = instName(); if(!nn) return alert('Informe o nome da instância.');
+      const r = await _api('instance/stop/'+encodeURIComponent(nn), { method:'POST' });
+      const t = await r.text();
+      alert(r.ok ? 'Parada: '+t : ('Falha: '+t));
+    };
+    if(btnDel) btnDel.onclick = async () => {
+      const nn = instName(); if(!nn) return alert('Informe o nome da instância.');
+      const r = await _api('instance/delete/'+encodeURIComponent(nn), { method:'DELETE' });
+      const t = await r.text();
+      alert(r.ok ? 'Excluída: '+t : ('Falha: '+t));
+    };
+    if(btnQR) btnQR.onclick = async () => {
+      const nn = instName(); if(!nn) return alert('Informe o nome da instância.');
+      await showQR(nn);
+      // Começa a checar estado a cada 5s
+      setInterval(()=>checkState(nn), 5000);
+    };
+  } catch(e){ console.warn('Admin enhancer falhou', e); }
+})();
+</script>
+
+
+<section class="card">
+  <h3 style="margin-top:0;">Selecionar Servidor Evolution</h3>
+  <p class="muted">Escolha qual servidor o painel deve usar agora (apenas administradores).</p>
+  <select id="evo-selector"></select>
+  <button class="btn" id="evo-apply" style="margin-top:8px;">Aplicar</button>
+  <span id="evo-apply-msg" class="muted"></span>
+</section>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    const t = (AUTH && AUTH.getTenant && AUTH.getTenant()) || { id:"prod" };
+    const sel = document.getElementById("evo-selector");
+    const apply = document.getElementById("evo-apply");
+    const msg = document.getElementById("evo-apply-msg");
+    const extras = (t && t.evolutionsExtras) || [];
+    const opts = [
+      { label: "🌐 Servidor Principal", evolutionApiUrl: t.evolutionApiUrl || t.EVOLUTION_API_URL, apiKey: t.apiKey || t.API_KEY },
+      ...extras
+    ].filter(o => o && o.evolutionApiUrl);
+    sel.innerHTML = opts.map(o => `<option value="${o.evolutionApiUrl}|${o.apiKey||''}">${o.label}</option>`).join("");
+    const curUrl = localStorage.getItem("EVO_URL_OVERRIDE__"+t.id) || (t.evolutionApiUrl || t.EVOLUTION_API_URL) || "";
+    const curKey = localStorage.getItem("EVO_KEY_OVERRIDE__"+t.id) || (t.apiKey || t.API_KEY) || "";
+    const curVal = curUrl + "|" + curKey;
+    for (const opt of sel.options){ if (opt.value === curVal) { sel.value = curVal; break; } }
+    apply.onclick = () => {
+      const [url, key] = sel.value.split("|");
+      localStorage.setItem("EVO_URL_OVERRIDE__"+t.id, String(url||""));
+      localStorage.setItem("EVO_KEY_OVERRIDE__"+t.id, String(key||""));
+      msg.textContent = "Aplicado! Atualize a página.";
+      setTimeout(()=>msg.textContent="",1500);
+    };
+  } catch(e){}
+});
+</script>
+
+</main>
 
   <script src="layout.js"></script>
   <script>

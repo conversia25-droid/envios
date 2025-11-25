@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnóstico Evolution | Paiva Dashboard</title>
+<link rel="stylesheet" href="theme.css"><link rel="stylesheet" href="style.css"></head>
+<body><main class="main-card"><h1>Diagnóstico Evolution</h1><p class="muted">Teste múltiplos endpoints.</p>
+<section class="card"><button class="btn" id="run">Rodar testes</button>
+<pre class="log" id="out" style="background:#0b1020;color:#d6e2ff;padding:10px;border-radius:10px;height:320px;overflow:auto;"></pre></section></main>
+<script src="auth.js"></script><script src="script.js"></script>
+<script>
+async function test(){const out=document.getElementById('out');const cfg=(window.__getTenantCfg&&__getTenantCfg())||{};function log(x){out.textContent+=x+"\n";out.scrollTop=out.scrollHeight;}
+log("URL: "+cfg.EVOLUTION_API_URL);log("Key: "+(cfg.API_KEY?cfg.API_KEY.slice(0,4)+"...":"(vazia)"));
+const checks=["","status","health","instance/fetchInstances","instances","instance"];
+for(const p of checks){try{const r=await api(p,{method:'GET',headers:{Accept:'application/json'}});const t=await r.text();log(`/${p} -> HTTP ${r.status} ${r.ok?"OK":"FAIL"} | ${t.slice(0,160)}`);}catch(e){log(`/${p} -> ERRO: `+e.message);}}}
+document.getElementById('run').onclick=test;
+</script></body></html>

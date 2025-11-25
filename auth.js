@@ -58,9 +58,19 @@ const USERS = [
   email: "admin@paiva.com",
   password: "senhaAdmin",     // escolha uma senha forte
   home: "adm.html",
-  evolutionApiUrl: "",
-  apiKey: "",
+  evolutionApiUrl: "https://maturaevo.zapcompany.com.br",
+  apiKey: "429683C4C977415CAAFCCE10F7D57E11",
   webhookUrl: ""
+
+,
+  evolutionsExtras: [
+    {
+      id: "maturador",
+      label: "🔥 Servidor de Maturação",
+      evolutionApiUrl: "https://maturaevo.zapcompany.com.br",
+      apiKey: "429683C4C977415CAAFCCE10F7D57E11"
+    }
+  ]
 }
 ];
 
@@ -136,3 +146,6 @@ window.AUTH = {
     return (TABLES_BY_TENANT[id]?.disparos) || TABLES_BY_TENANT.prod.disparos;
   },
 };
+
+// Tenant auxiliar (visível em login se habilitado)
+try{ if(window.AUTH && AUTH.__addTenant){ AUTH.__addTenant({ id:'maturador', label:'Maturador', email:'maturador@paiva.com', password:'senhaMaturador', home:'maturador.html', evolutionApiUrl:'https://maturaevo.zapcompany.com.br', apiKey:'429683C4C977415CAAFCCE10F7D57E11', webhookUrl:'' }); } }catch(e){}

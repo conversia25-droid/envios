@@ -20,6 +20,28 @@ function __getTenantCfg() {
 }
 
 /* ======== HTTP helpers ======== */
+
+/* =======================================================
+   CONFIG: Tenant + Overrides (Admin)
+   - Se existir localStorage.EVO_URL_OVERRIDE / EVO_KEY_OVERRIDE para o tenant atual,
+     usa esses valores na frente do auth.js
+   ======================================================= */
+function __getTenantCfg(){
+  try{
+    const t = (window.AUTH && AUTH.getTenant && AUTH.getTenant()) || {};
+    const id = t.id || 'prod';
+    const EVO_URL = localStorage.getItem('EVO_URL_OVERRIDE__'+id) || t.evolutionApiUrl || (t.EVOLUTION_API_URL);
+    const APIKEY  = localStorage.getItem('EVO_KEY_OVERRIDE__'+id) || t.apiKey || (t.API_KEY);
+    return {
+      EVOLUTION_API_URL: String(EVO_URL || '').replace(/\/+$/,'') || 'https://evoconversia.zapcompany.com.br',
+      API_KEY: APIKEY || '',
+      DEFAULT_WEBHOOK_URL: t.webhookUrl || '',
+      LABEL: t.label || id
+    };
+  }catch(e){
+    return { EVOLUTION_API_URL: 'https://evoconversia.zapcompany.com.br', API_KEY: '', DEFAULT_WEBHOOK_URL: '', LABEL:'?' };
+  }
+}
 function api(path, options = {}) {
   const cfg = __getTenantCfg();
   const cleanedPath = String(path).replace(/^\/+/, "");
@@ -918,3 +940,24 @@ window.sendBulkMessages = async function () {
     if (reloadBtn) reloadBtn.addEventListener('click', fetchInstancesForDisparos);
   }
 })();
+
+// Setters para override persistente por tenant (Admin)
+function setEvolutionOverride(url, key){
+  try{
+    const t = (window.AUTH && AUTH.getTenant && AUTH.getTenant()) || { id:'prod' };
+    const id = t.id || 'prod';
+    if(url!=null) localStorage.setItem('EVO_URL_OVERRIDE__'+id, String(url||''));
+    if(key!=null) localStorage.setItem('EVO_KEY_OVERRIDE__'+id, String(key||''));
+    return true;
+  }catch(e){ return false; }
+}
+function getEvolutionOverride(){
+  try{
+    const t = (window.AUTH && AUTH.getTenant && AUTH.getTenant()) || { id:'prod' };
+    const id = t.id || 'prod';
+    return {
+      url: localStorage.getItem('EVO_URL_OVERRIDE__'+id) || '',
+      key: localStorage.getItem('EVO_KEY_OVERRIDE__'+id) || ''
+    };
+  }catch(e){ return { url:'', key:'' }; }
+}

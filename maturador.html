@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🔥 Maturador (multi-instância) | Painel</title>
+  <link rel="stylesheet" href="theme.css"/>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    .inst-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+    .inst-item{display:flex;align-items:center;gap:10px;border:1px solid var(--border,#e4e6ef);padding:8px 10px;border-radius:12px;background:var(--card,#fff)}
+    .inst-name{font-weight:700}
+    .online{color:#26a269}
+    .offline{color:#bf3c30}
+    .muted-sm{color:#76809b;font-size:.85rem}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .pill{padding:3px 8px;border-radius:999px;border:1px solid #d8dbe6;font-size:.8rem;color:#4b5563;background:#fff}
+  </style>
+</head>
+<body>
+  <script src="auth.js"></script>
+  <script src="layout.js"></script>
+
+  <main class="main-card">
+
+    <!-- TOPBAR -->
+    <div class="card" style="margin-bottom:12px;">
+      <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; justify-content:space-between;">
+        <nav class="tabs" style="display:flex; gap:8px; flex-wrap:wrap;">
+          <a class="tab" href="instancias.html">Instâncias</a>
+          <a class="tab" href="disparo.html">Disparo</a>
+          <a class="tab active" href="maturador.html">🔥 Maturador</a>
+        </nav>
+        <div class="muted" id="evo-in-use">Evolution: —</div>
+      </div>
+    </div>
+
+    <!-- 1) Escolha as instâncias (checkbox grid) -->
+    <section class="card">
+      <h3 style="margin-top:0;">1) Escolha as instâncias</h3>
+      <div class="muted" id="ambiente-label">Instâncias conectadas no ambiente: —</div>
+
+      <div class="row" style="margin:10px 0;">
+        <button class="btn" id="btn-recarregar">Recarregar instâncias</button>
+        <button class="btn btn-outline" id="btn-todas">Selecionar todas</button>
+        <button class="btn btn-outline" id="btn-online">Somente online</button>
+        <button class="btn btn-outline" id="btn-limpar">Limpar seleção</button>
+        <label class="pill"><input type="checkbox" id="chk-boost" style="margin-right:6px"> Forçar checagem de status</label>
+        <span class="muted-sm" id="resume">—</span>
+      </div>
+
+      <div id="inst-grid" class="inst-grid" style="margin-top:8px;"></div>
+    </section>
+
+    <!-- 2) Ação: enviar webhook -->
+    <section class="card">
+      <h3 style="margin-top:0;">2) Enviar para Webhook</h3>
+      <div class="row">
+        <button class="btn btn-primary" id="btn-iniciar">Enviar Webhook (máx. 26 instâncias)</button>
+        <span class="muted" id="msg"></span>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="script.js"></script>
+  <script>
+    // ===== Helpers =====
+    function cfg(){ return (window.__getTenantCfg && __getTenantCfg()) || {}; }
+    function tenant(){ return (window.AUTH && AUTH.getTenant && AUTH.getTenant()) || { id:'admin', label:'—' }; }
+    function kSel(){ return 'MATURADOR_SELECTED__' + (tenant().id || 'admin'); }
+    function saveSel(arr){ try{ localStorage.setItem(kSel(), JSON.stringify(arr||[])); }catch{} }
+    function loadSel(){ try{ return JSON.parse(localStorage.getItem(kSel())||'[]'); }catch{ return []; } }
+
+    async function parseJson(res){ const t = await res.text(); try{ return JSON.parse(t); }catch{return null;} }
+
+    // Listagem das instâncias (usa a mesma lógica original)
+    async function listInstancesFlexible(){
+      const eps = ['instances','instance/fetchInstances','instance/list','instance'];
+      for (const ep of eps){
+        try{
+          const r = await api(ep, { method:'GET', headers:{Accept:'application/json'} });
+          if (!r.ok) continue;
+          const data = await parseJson(r) || [];
+          let arr=[];
+          if (Array.isArray(data)) arr=data;
+          else if (data && Array.isArray(data.instances)) arr=data.instances;
+          else if (data && Array.isArray(data.data)) arr=data.data;
+          else if (data && typeof data==='object') arr=Object.values(data);
+          return arr.map(x=>{
+            const name = x.instanceName || x.name || x.instance?.instanceName || x.instance?.name || x.id || x.slug || '—';
+            let statusRaw = (x.status || x.connectionStatus || x.instance?.status ||
+                            (x.instance?.isOnline?'open':'closed') || (x.isOnline?'open':'closed') || '')
+                            .toString().toLowerCase();
+            const known = /open|online|connected|true|closed|offline|disconnected|false/.test(statusRaw);
+            return {name,isOnline: /open|online|connected|true/.test(statusRaw), raw:x, statusRaw, known};
+          });
+        }catch(e){}
+      }
+      return [];
+    }
+
+    // Checa status individual se necessário
+    async function probeStatus(name){
+      const candidates = [
+        `instance/connectionState/${encodeURIComponent(name)}`,
+        `instance/connection-state/${encodeURIComponent(name)}`,
+        `instance/state/${encodeURIComponent(name)}`,
+        `instance/${encodeURIComponent(name)}`
+      ];
+      for (const ep of candidates){
+        try{
+          const r = await api(ep, { method:'GET', headers:{Accept:'application/json'} });
+          const data = await parseJson(r) || {};
+          if (!r.ok) continue;
+          const v = (data.status || data.state || data.connectionStatus || '').toString().toLowerCase();
+          if (v) return /open|online|connected|true/.test(v);
+        }catch(e){}
+      }
+      return false;
+    }
+
+    function renderGrid(list){
+      const grid = document.getElementById('inst-grid');
+      const selected = new Set(loadSel());
+      grid.innerHTML = list.map(i=>{
+        const chk = selected.has(i.name) ? 'checked' : '';
+        const status = i.isOnline ? '<span class="online">🟢</span>' : '<span class="offline">🔴</span>';
+        const hint = i.known ? '' : ' title="status estimado; habilite `Forçar checagem` para confirmar"';
+        return `<label class="inst-item"${hint}>
+          <input type="checkbox" class="inst-cb" data-name="${i.name}" ${chk}/>
+          <span class="inst-name">${i.name}</span>
+          <span class="muted-sm">| ${status}</span>
+        </label>`;
+      }).join('');
+
+      grid.querySelectorAll('.inst-cb').forEach(cb=>{
+        cb.addEventListener('change', ()=>{
+          const arr = Array.from(document.querySelectorAll('.inst-cb:checked')).map(el=>el.dataset.name);
+          saveSel(arr);
+          updateResume(list);
+        });
+      });
+      updateResume(list);
+    }
+
+    function updateResume(list){
+      const total = list.length;
+      const on = list.filter(x=>x.isOnline).length;
+      const sel = loadSel().length;
+      document.getElementById('resume').textContent = `${sel} selecionadas | ${on} online de ${total}`;
+    }
+
+    async function loadAll(){
+      document.getElementById('evo-in-use').textContent = 'Evolution: ' + (cfg().EVOLUTION_API_URL || '—');
+      const t = tenant();
+      document.getElementById('ambiente-label').textContent = 'Instâncias conectadas no ambiente: ' + (t.label || t.id);
+      let list = await listInstancesFlexible();
+
+      if (document.getElementById('chk-boost').checked){
+        for (let i=0;i<list.length;i++){
+          if (!list[i].known){
+            list[i].isOnline = await probeStatus(list[i].name);
+            list[i].known = true;
+          }
+        }
+      }
+
+      list.sort((a,b)=>{
+        const na = parseInt(a.name,10), nb = parseInt(b.name,10);
+        if(!isNaN(na) && !isNaN(nb)) return na-nb;
+        return a.name.localeCompare(b.name);
+      });
+
+      renderGrid(list);
+      return list;
+    }
+
+    document.addEventListener('DOMContentLoaded', async ()=>{
+      let cacheList = await loadAll();
+
+      document.getElementById('btn-recarregar').onclick = async ()=>{ cacheList = await loadAll(); };
+      document.getElementById('btn-todas').onclick = ()=>{ saveSel(cacheList.map(x=>x.name)); renderGrid(cacheList); };
+      document.getElementById('btn-online').onclick = ()=>{ saveSel(cacheList.filter(x=>x.isOnline).map(x=>x.name)); renderGrid(cacheList); };
+      document.getElementById('btn-limpar').onclick = ()=>{ saveSel([]); renderGrid(cacheList); };
+      document.getElementById('chk-boost').onchange = async ()=>{ cacheList = await loadAll(); };
+
+      // Enviar webhook (sem chamar /instance/fetchInstance)
+      document.getElementById('btn-iniciar').onclick = async ()=>{
+        const sel = loadSel();
+        if (!sel.length){
+          alert('Selecione ao menos 1 instância.');
+          return;
+        }
+        if (sel.length > 26){
+          alert('Máximo de 26 instâncias por vez.');
+          return;
+        }
+
+        const webhookUrl = 'https://evo2-n8n.njuzo4.easypanel.host/webhook/maturador';
+        let payload = {};
+
+        for (let i = 0; i < sel.length; i++) {
+          const instName = sel[i];
+          const idx = i + 1;
+
+          payload[`instancia${idx}`] = instName;
+
+          const instObj = cacheList.find(x=>x.name === instName) || {};
+          const raw = instObj.raw || {};
+
+          // tenta achar algum campo de número no objeto da API
+          const numero =
+            (raw.instance && (raw.instance.phone || raw.instance.number || raw.instance.wid)) ||
+            raw.phone ||
+            raw.number ||
+            raw.wid ||
+            '';
+
+          payload[`numero${idx}`] = numero || '';
+        }
+
+        console.log('PAYLOAD ENVIADO PRO WEBHOOK:', payload);
+
+        try {
+          const r = await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (r.ok) {
+            document.getElementById('msg').textContent = 'Webhook enviado com sucesso!';
+          } else {
+            document.getElementById('msg').textContent = 'Erro ao enviar webhook: ' + r.status;
+          }
+        } catch (e) {
+          document.getElementById('msg').textContent = 'Falha ao enviar webhook: ' + e.message;
+        }
+
+        setTimeout(()=>{ document.getElementById('msg').textContent=''; }, 6000);
+      };
+
+      // auto refresh status
+      setInterval(async ()=>{ cacheList = await loadAll(); }, 15000);
+    });
+  </script>
+</body>
+</html>
