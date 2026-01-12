@@ -3,191 +3,336 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Início | Paiva Dashboard</title>
+  <title>Início</title>
 
   <link rel="stylesheet" href="theme.css"/>
   <link rel="stylesheet" href="style.css"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
- <style>
-    .page-header { margin-bottom: 16px; }
-    .page-header h1 { margin: 0 0 6px; font-size: 1.6rem; }
-    .muted { color: #6b7280; }
-    .grid { display: grid; gap: 14px; }
-    @media (min-width: 900px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
-    .card {
-      background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px;
-      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  <style>
+    .ranking-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
     }
-    .card h2 { margin: 0 0 8px; font-size: 1.1rem; }
-    .btn { cursor: pointer; border: none; border-radius: 10px; padding: 10px 12px; font-weight: 700; }
-    .btn-primary { background: #0a8f83; color: #fff; }
-    .btn-outline { background: #fff; color: #111; border: 1px solid #e5e7eb; }
-    .form-group { display: grid; gap: 6px; margin-bottom: 10px; }
-    textarea, input[type="number"], input[type="text"], input[type="url"], input[type="file"] {
-      width: 100%; padding: 10px 12px; border: 1px solid #0b1b3a; border-radius: 10px;
-      background: #fff; box-sizing: border-box; font-family: inherit; font-size: 1rem;
+
+    .ranking-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
     }
-    .form-check { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
-    .form-check input { transform: translateY(1px); }
-    .status-box { display: none; margin-top: 10px; padding: 10px 12px; border: 1px dashed #d1d5db; border-radius: 10px; background: #f9fafb; }
-    .img-preview { display:flex; gap:10px; align-items:center; }
-    .img-preview img { max-width: 240px; border-radius: 10px; border:1px solid #e5e7eb; }
-    .send-type { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
-    .send-type label { display:flex; gap:6px; align-items:center; }
-    .hidden { display:none; }
+
+    .ranking-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .ranking-pos {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: #0a8f83;
+      color: #fff;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+
+    .ranking-count {
+      font-weight: 700;
+    }
+
+    .rank-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    @media (max-width: 900px) {
+      .rank-grid {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
+
 <body>
-  <main class="main-content">
-    <header class="page-header">
-      <h1>Painel Geral</h1>
-      <p>Resumo do sistema e indicadores em tempo real.</p>
-    </header>
+<main class="main-content">
 
-    <!-- ===================== RESUMO ===================== -->
-    <section class="summary-grid">
-      <div class="summary-item">
-        <div class="label">Total de Disparos</div>
-        <div class="value" id="total-envios">0</div>
-      </div>
-      <div class="summary-item">
-        <div class="label">Disparos Hoje</div>
-        <div class="value" id="envios-hoje">0</div>
-      </div>
-      <div class="summary-item">
-        <div class="label">Instâncias Ativas</div>
-        <div class="value" id="instancias-ativas">0</div>
-      </div>
-    </section>
+  <header class="page-header">
+    <h1>Início</h1>
+  </header>
 
-    <!-- ===================== GRÁFICO DE ENVIOS ===================== -->
-    <section class="cards-grid">
-      <div class="card">
-        <h2>Gráfico de Disparos por Hora</h2>
-        <div style="height:340px;">
-          <canvas id="chartEnvios"></canvas>
-        </div>
-      </div>
+  <!-- KPIs -->
+  <section class="summary-grid">
+    <div class="summary-item">
+      <div class="label">Disparos Hoje</div>
+      <div class="value" id="kpi-dia">0</div>
+    </div>
+    <div class="summary-item">
+      <div class="label">Disparos Semana</div>
+      <div class="value" id="kpi-semana">0</div>
+    </div>
+    <div class="summary-item">
+      <div class="label">Disparos Mês</div>
+      <div class="value" id="kpi-mes">0</div>
+    </div>
+    <div class="summary-item">
+      <div class="label">Instâncias Ativas</div>
+      <div class="value" id="instancias-ativas">0</div>
+    </div>
+  </section>
 
-      <div class="card">
-        <h2>Disparos por Instância</h2>
-        <div style="height:340px;">
-          <canvas id="chartInstancias"></canvas>
-        </div>
-      </div>
-    </section>
-  </main>
+  <!-- Rankings -->
+  <section class="rank-grid">
+    <div class="card">
+      <h2>Top Instâncias (Hoje)</h2>
+      <div id="rank-dia" class="ranking-list"></div>
+    </div>
+    <div class="card">
+      <h2>Top Instâncias (Semana)</h2>
+      <div id="rank-semana" class="ranking-list"></div>
+    </div>
+    <div class="card">
+      <h2>Top Instâncias (Mês)</h2>
+      <div id="rank-mes" class="ranking-list"></div>
+    </div>
+  </section>
 
-  <!-- ========== SCRIPTS ========== -->
-  <script src="auth.js"></script>
-  <script src="layout.js"></script>
+  <!-- Gráfico -->
+  <section class="card" style="margin-top:16px;">
+    <h2>Disparos por Período</h2>
 
-  <script>
-  // ============================================
-  // SUPABASE via AUTH + tabela dinâmica por tenant
-  // ============================================
-  const { url: SB_URL } = AUTH.getSupabaseInfo();
-  const SB_HEADERS = AUTH.getSupabaseHeaders();
-  const TABLE = AUTH.getDisparosTable(); // disparos_log | disparos_log_local | disparos_log_vps1
+    <div style="margin-bottom:10px;">
+      <button class="btn btn-outline" onclick="setPeriodo('dia')">Diário</button>
+      <button class="btn btn-outline" onclick="setPeriodo('semana')">Semanal</button>
+      <button class="btn btn-outline" onclick="setPeriodo('mes')">Mensal</button>
+    </div>
 
-  async function fetchDisparos(limit = 2000) {
-    const url = `${SB_URL}/rest/v1/${TABLE}?select=instancia,created_at,status&order=created_at.asc&limit=${limit}`;
-    const res = await fetch(url, { headers: SB_HEADERS });
-    return res.ok ? res.json() : [];
-  }
+    <canvas id="chartEnvios"></canvas>
+  </section>
 
-  // ============================================
-  // ATUALIZA OS INDICADORES
-  // ============================================
-  async function atualizarIndicadores() {
-    const data = await fetchDisparos();
-    const total = data.length;
+</main>
 
-    const hoje = new Date().toISOString().split('T')[0];
-    const enviadosHoje = data.filter(d => (d.created_at || '').startsWith(hoje)).length;
+<script src="auth.js"></script>
+<script src="layout.js"></script>
 
-    const instancias = new Set(data.map(d => d.instancia));
-    document.getElementById('total-envios').textContent = total.toLocaleString('pt-BR');
-    document.getElementById('envios-hoje').textContent = enviadosHoje.toLocaleString('pt-BR');
-    document.getElementById('instancias-ativas').textContent = instancias.size;
-  }
+<script>
+/* =========================================================
+   SUPABASE (já estava no seu arquivo estável)
+   ========================================================= */
+const supa = AUTH.getSupabaseInfo();
+const SB_URL = supa.url;
+const HEADERS = AUTH.getSupabaseHeaders();
+const TABLE = AUTH.getDisparosTable();
 
-  // ============================================
-  // GRÁFICO DE ENVIOS POR HORA / POR INSTÂNCIA
-  // ============================================
-  let chartEnvios, chartInstancias;
+async function fetchDisparos(limit=10000) {
+  const url = `${SB_URL}/rest/v1/${TABLE}?select=instancia,created_at&order=created_at.desc&limit=${limit}`;
+  const res = await fetch(url, { headers: HEADERS });
+  return res.ok ? res.json() : [];
+}
+// 👉 3) COLE A NOVA FUNÇÃO AQUI (logo abaixo)
+  async function fetchDisparosMesCount() {
+    const agora = new Date();
 
-  async function atualizarGraficos() {
-    const data = await fetchDisparos();
-    if (!data.length) return;
+    const inicioMes = new Date(
+      agora.getFullYear(),
+      agora.getMonth(),
+      1, 0, 0, 0, 0
+    ).toISOString();
 
-    // --- Agrupa por hora ---
-    const porHora = {};
-    data.forEach(d => {
-      const hora = new Date(d.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit' });
-      porHora[hora] = (porHora[hora] || 0) + 1;
+    const fimMes = new Date(
+      agora.getFullYear(),
+      agora.getMonth() + 1,
+      0, 23, 59, 59, 999
+    ).toISOString();
+
+    const url =
+      `${SB_URL}/rest/v1/${TABLE}` +
+      `?created_at=gte.${inicioMes}` +
+      `&created_at=lte.${fimMes}` +
+      `&select=id`;
+
+    const res = await fetch(url, {
+      headers: {
+        ...HEADERS,
+        Prefer: "count=exact"
+      }
     });
 
-    // --- Agrupa por instância ---
-    const porInstancia = {};
-    data.forEach(d => {
-      const key = d.instancia || '—';
-      porInstancia[key] = (porInstancia[key] || 0) + 1;
-    });
-
-    // --- Gráfico 1 (linha) ---
-    const ctx1 = document.getElementById('chartEnvios').getContext('2d');
-    if (!chartEnvios) {
-      chartEnvios = new Chart(ctx1, {
-        type: 'line',
-        data: {
-          labels: Object.keys(porHora),
-          datasets: [{
-            label: 'Mensagens Enviadas',
-            data: Object.values(porHora),
-            borderWidth: 2,
-            fill: true
-          }]
-        },
-        options: { responsive: true, scales: { y: { beginAtZero: true } } }
-      });
-    } else {
-      chartEnvios.data.labels = Object.keys(porHora);
-      chartEnvios.data.datasets[0].data = Object.values(porHora);
-      chartEnvios.update();
-    }
-
-    // --- Gráfico 2 (barras) ---
-    const ctx2 = document.getElementById('chartInstancias').getContext('2d');
-    if (!chartInstancias) {
-      chartInstancias = new Chart(ctx2, {
-        type: 'bar',
-        data: {
-          labels: Object.keys(porInstancia),
-          datasets: [{
-            label: 'Envios por Instância',
-            data: Object.values(porInstancia),
-            borderWidth: 1
-          }]
-        },
-        options: { responsive: true, scales: { y: { beginAtZero: true } } }
-      });
-    } else {
-      chartInstancias.data.labels = Object.keys(porInstancia);
-      chartInstancias.data.datasets[0].data = Object.values(porInstancia);
-      chartInstancias.update();
-    }
+    const range = res.headers.get("content-range");
+    return range ? Number(range.split("/")[1]) : 0;
   }
 
-  // Atualiza tudo a cada 10 segundos
-  setInterval(() => {
-    atualizarIndicadores();
-    atualizarGraficos();
-  }, 10000);
 
-  atualizarIndicadores();
-  atualizarGraficos();
-  </script>
+/* =========================================================
+   ✅ INSTÂNCIAS ATIVAS (MÍNIMA ALTERAÇÃO)
+   - Usa o MESMO caminho da página Instâncias:
+     EVOLUTION_API_URL + "instance/fetchInstances" com header apikey
+   - Conta SOMENTE "Conectadas" (connectionStatus === "open")
+   ========================================================= */
+
+/** (1) mesma lógica do tenant usada no script.js, mas com nomes próprios do index */
+function __getTenantCfg_Index() {
+  const t = (window.AUTH && AUTH.getTenant && AUTH.getTenant()) || {};
+  return {
+    EVOLUTION_API_URL: String(t.evolutionApiUrl || "https://evoconversia.zapcompany.com.br").replace(/\/+$/,''),
+    API_KEY: t.apiKey || ""
+  };
+}
+
+/** (2) mesma ideia do api() do script.js, mas isolada para não conflitar */
+function apiEvo_Index(path, options = {}) {
+  const cfg = __getTenantCfg_Index();
+  const cleanedPath = String(path).replace(/^\/+/, "");
+  const url = `${cfg.EVOLUTION_API_URL}/${cleanedPath}`;
+  const headers = {
+    apikey: cfg.API_KEY,
+    "Content-Type": "application/json",
+    ...(options.headers || {})
+  };
+  return fetch(url, { mode: "cors", ...options, headers });
+}
+
+async function fetchInstanciasAtivas() {
+  try {
+    const res = await apiEvo_Index("instance/fetchInstances", { method: "GET" });
+    if (!res.ok) return 0;
+
+    const list = await res.json();
+    const arr = Array.isArray(list) ? list : [];
+
+    // IGUAL À PÁGINA INSTÂNCIAS: "Conectadas" = connectionStatus === "open"
+    return arr.filter(i =>
+      String(i.connectionStatus || "").toLowerCase() === "open"
+    ).length;
+  } catch (e) {
+    console.error("fetchInstanciasAtivas error:", e);
+    return 0;
+  }
+}
+
+/* ========================================================= */
+
+function filtrarPeriodo(data, tipo) {
+  const agora = new Date();
+
+  return data.filter(d => {
+    const dt = new Date(d.created_at);
+
+    if (tipo === "dia") {
+      return dt.toDateString() === agora.toDateString();
+    }
+
+    if (tipo === "semana") {
+      const inicioSemana = new Date(agora);
+      inicioSemana.setHours(0, 0, 0, 0);
+      inicioSemana.setDate(agora.getDate() - agora.getDay());
+
+      const fimSemana = new Date(inicioSemana);
+      fimSemana.setDate(inicioSemana.getDate() + 6);
+      fimSemana.setHours(23, 59, 59, 999);
+
+      return dt >= inicioSemana && dt <= fimSemana;
+    }
+
+    if (tipo === "mes") {
+  const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1, 0, 0, 0, 0);
+  const fimMes = new Date(agora.getFullYear(), agora.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  return dt >= inicioMes && dt <= fimMes;
+}
+  });
+}
+
+
+function rankingInstancias(data) {
+  const m={};
+  data.forEach(d=>{
+    const i=d.instancia||"—";
+    m[i]=(m[i]||0)+1;
+  });
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,5);
+}
+
+function renderRanking(id, lista) {
+  const el=document.getElementById(id);
+  el.innerHTML="";
+  lista.forEach(([inst,qtd],idx)=>{
+    const div=document.createElement("div");
+    div.className="ranking-item";
+    div.innerHTML=`
+      <div class="ranking-left">
+        <div class="ranking-pos">${idx+1}</div>
+        <div>${inst}</div>
+      </div>
+      <div class="ranking-count">${qtd}</div>
+    `;
+    el.appendChild(div);
+  });
+}
+
+async function atualizarResumo() {
+  const data = await fetchDisparos();
+
+  const dia = filtrarPeriodo(data,"dia");
+  const semana = filtrarPeriodo(data,"semana");
+  const mes = filtrarPeriodo(data,"mes");
+
+  document.getElementById("kpi-dia").textContent = dia.length;
+  document.getElementById("kpi-semana").textContent = semana.length;
+  document.getElementById("kpi-mes").textContent =
+  await fetchDisparosMesCount();
+
+  // 👇 só essa linha já existia, agora a função funciona de verdade
+  document.getElementById("instancias-ativas").textContent = await fetchInstanciasAtivas();
+
+  renderRanking("rank-dia", rankingInstancias(dia));
+  renderRanking("rank-semana", rankingInstancias(semana));
+  renderRanking("rank-mes", rankingInstancias(mes));
+}
+
+let chart, periodoAtual="dia";
+function setPeriodo(p){periodoAtual=p;atualizarGrafico();}
+
+async function atualizarGrafico() {
+  const data = await fetchDisparos();
+  const filtrado = filtrarPeriodo(data, periodoAtual);
+
+  const mapa={};
+  filtrado.forEach(d=>{
+    const dt=new Date(d.created_at);
+    const k = periodoAtual==="dia"
+      ? String(dt.getHours()).padStart(2,"0")
+      : dt.toLocaleDateString("pt-BR");
+    mapa[k]=(mapa[k]||0)+1;
+  });
+
+  const ctx=document.getElementById("chartEnvios").getContext("2d");
+  if (!chart) {
+    chart=new Chart(ctx,{
+      type:"line",
+      data:{labels:Object.keys(mapa),datasets:[{label:"Disparos",data:Object.values(mapa),fill:true,borderWidth:2}]},
+      options:{responsive:true,scales:{y:{beginAtZero:true}}}
+    });
+  } else {
+    chart.data.labels=Object.keys(mapa);
+    chart.data.datasets[0].data=Object.values(mapa);
+    chart.update();
+  }
+}
+
+atualizarResumo();
+atualizarGrafico();
+setInterval(atualizarResumo,10000);
+</script>
 </body>
 </html>

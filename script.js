@@ -179,6 +179,10 @@ function resolvePairingCodeFromPayload(payload) {
 
 /* ===== Countdown do QR ===== */
 let qrCountdownTimer = null;
+let qrAutoRefreshTimer = null;
+let qrAutoRefreshRemaining = 0;
+let lastQrSrc = null;
+
 function ensureQrToolbar() {
   let tb = document.getElementById("qr-toolbar");
   if (!tb) {
@@ -227,6 +231,60 @@ function stopQrCountdown() {
   if (el) el.textContent = "";
   if (qrCountdownTimer) { clearInterval(qrCountdownTimer); qrCountdownTimer = null; }
 }
+function startQrAutoRefresh(instanceName, seconds = 30) {
+  let timerEl = document.getElementById("qr-timer");
+
+  if (!timerEl) {
+    const qrImage = document.getElementById("qrcode-image");
+    if (!qrImage || !qrImage.parentNode) return;
+
+    timerEl = document.createElement("div");
+    timerEl.id = "qr-timer";
+    timerEl.style.marginTop = "6px";
+    timerEl.style.fontSize = "14px";
+    timerEl.style.color = "#555";
+    timerEl.style.textAlign = "center";
+
+    qrImage.parentNode.insertBefore(timerEl, qrImage.nextSibling);
+  }
+
+
+  if (qrAutoRefreshTimer) {
+    clearInterval(qrAutoRefreshTimer);
+    qrAutoRefreshTimer = null;
+  }
+
+  let remaining = seconds;
+  timerEl.textContent = `Expira em ${remaining}s`;
+
+  qrAutoRefreshTimer = setInterval(() => {
+    remaining--;
+
+    if (remaining <= 0) {
+  clearInterval(qrAutoRefreshTimer);
+  qrAutoRefreshTimer = null;
+
+  timerEl.textContent = "QR expirado. Gerando novo...";
+
+  const qrImage = document.getElementById("qrcode-image");
+  if (qrImage) {
+    qrImage.style.display = "none";
+    qrImage.src = "";
+  }
+
+  const modal = document.getElementById("qr-modal");
+if (modal && modal.style.display !== "none") {
+  connectInstance(instanceName);
+}
+  return;
+}
+
+
+    timerEl.textContent = `Expira em ${remaining}s`;
+  }, 1000);
+}
+
+
 
 /* ===== Pairing Code ===== */
 let pairingCountdownTimer = null;
@@ -454,6 +512,15 @@ async function fetchInstances() {
 
 /* criar/deletar/logout */
 window.createInstance = async function(instanceName) {
+  if (!instanceName || !instanceName.trim()) {
+    const messageElement = document.getElementById("create-instance-message");
+    if (messageElement) {
+      messageElement.innerHTML = `<span style="color:red;">❌ Informe um nome para a instância.</span>`;
+    }
+    return;
+  }
+
+  instanceName = instanceName.trim();
   const messageElement = document.getElementById("create-instance-message");
   const createButton = document.getElementById("create-instance-button");
   if (messageElement) messageElement.textContent = "Enviando requisição...";
@@ -566,6 +633,7 @@ window.connectInstance = async function(instanceName) {
   if (window.connectionIntervalId) clearInterval(window.connectionIntervalId);
   stopQrCountdown();
   hidePairingCode();
+  lastQrSrc = null;
 
   const setMsg = (t, type = "info") => {
     if (!qrStatus) return;
@@ -594,7 +662,6 @@ window.connectInstance = async function(instanceName) {
       qrImage.src = imgSrc;
       qrImage.style.display = "block";
       hidePairingCode();
-      startQrCountdown(expiresAtMs);
       checkConnectionStatus(instanceName);
       return;
     }
@@ -631,24 +698,45 @@ function checkConnectionStatus(instanceName) {
     qrStatus.innerHTML = "Escaneie o QR Code abaixo:";
     qrImage.src = src;
     qrImage.style.display = "block";
-    startQrCountdown(expiresAtMs);
-  };
+    };
   const hideQR = (msg) => {
     qrStatus.innerHTML = msg || "Aguardando QR Code...";
     qrImage.style.display = "none";
     qrImage.src = "";
     stopQrCountdown();
+    const timerEl = document.getElementById("qr-timer");
+if (timerEl) timerEl.textContent = "";
+
   };
 
-  if (window.connectionIntervalId) clearInterval(window.connectionIntervalId);
+  if (window.connectionIntervalId) 
+   clearInterval(window.connectionIntervalId);
   window.connectionIntervalId = setInterval(async () => {
+    const modal = document.getElementById("qr-modal");
+if (!modal || modal.style.display === "none") {
+  clearInterval(window.connectionIntervalId);
+  window.connectionIntervalId = null;
+  return;
+}
     try {
-      const res = await api(`instance/connectionState/${encodeURIComponent(instanceName)}`, { method: "GET" });
-      const text = await readSafeText(res);
-      let state = null; try { state = JSON.parse(text); } catch { state = {}; }
-      const status = state?.connectionStatus || state?.status || "unknown";
+      const res = await api("instance/fetchInstances", { method: "GET" });
+if (!res.ok) throw new Error("Falha ao buscar instâncias");
+
+const list = await res.json();
+const state = list.find(i => i.name === instanceName) || {};
+const status = (state.connectionStatus || "connecting").toLowerCase();
+
 
       if (["open"].includes(status)) {
+        lastQrSrc = null;
+        const timerEl = document.getElementById("qr-timer");
+if (timerEl) timerEl.textContent = "";
+
+        if (qrAutoRefreshTimer) {
+  clearInterval(qrAutoRefreshTimer);
+  qrAutoRefreshTimer = null;
+}
+
         hideQR("✅ CONECTADO!");
         clearInterval(window.connectionIntervalId);
         fetchInstances();
@@ -658,26 +746,50 @@ function checkConnectionStatus(instanceName) {
         return;
       }
 
-      if (["connecting", "PAIRING", "qrcode", "QR"].includes(status)) {
-        let src = resolveQrImageFromPayload(state) || resolveQrImageFromPayload(text);
-        const expiresAt = state?.qrcode?.expiresAt || state?.qrcode?.expireAt;
-        const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : undefined;
-        if (src) { showQR(src, expiresAtMs); return; }
+      if (["connecting", "pairing", "qrcode", "qr"].includes(status)) {
+  let src = resolveQrImageFromPayload(state);
+  const expiresAt = state?.qrcode?.expiresAt || state?.qrcode?.expireAt;
+  const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : undefined;
 
-        const pairingCode = resolvePairingCodeFromPayload(state) || resolvePairingCodeFromPayload(text);
-        if (pairingCode) {
-          hideQR("Conecte-se com o código de pareamento:");
-          showPairingCode(pairingCode, expiresAtMs);
-          return;
-        }
+  if (src) {
+  if (lastQrSrc !== src) {
+    lastQrSrc = src;
+    showQR(src, expiresAtMs);
+    startQrAutoRefresh(instanceName, 30);
+  }
+  return;
+}
 
-        src = await tryGetQRCode(instanceName);
-        if (src) { showQR(src); return; }
 
-        hidePairingCode();
-        hideQR("Gerando QR/Código de pareamento...");
-        return;
-      }
+
+  const pairingCode = resolvePairingCodeFromPayload(state);
+  if (pairingCode) {
+    hideQR("Conecte-se com o código de pareamento:");
+    showPairingCode(pairingCode, expiresAtMs);
+    return;
+  }
+
+  src = await tryGetQRCode(instanceName);
+if (src) {
+  if (lastQrSrc !== src) {
+    lastQrSrc = src;
+    showQR(src);
+    startQrAutoRefresh(instanceName, 30);
+  }
+  return;
+}
+
+
+  // ⚠️ NÃO apagar QR existente
+  hidePairingCode();
+  if (!qrImage.src) {
+    hideQR("Gerando QR/Código de pareamento...");
+  } else {
+    qrStatus.innerHTML = "Aguardando escaneamento do QR...";
+  }
+  return;
+}
+
 
       hidePairingCode();
       hideQR(`Status: ${status}. Aguardando...`);
@@ -931,6 +1043,22 @@ window.sendBulkMessages = async function () {
   // Página Instâncias
   if (document.getElementById("instances-grid") || document.getElementById("summary-open")) {
     fetchInstances();
+    const reloadBtn = document.getElementById("reload-instances");
+if (reloadBtn) {
+  reloadBtn.addEventListener("click", () => {
+    fetchInstances();
+  });
+}
+
+    const input = document.getElementById("new-instance-name");
+    if (input) {
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          createInstance(input.value);
+        }
+      });
+    }
   }
 
   // Página Disparos
@@ -940,6 +1068,7 @@ window.sendBulkMessages = async function () {
     if (reloadBtn) reloadBtn.addEventListener('click', fetchInstancesForDisparos);
   }
 })();
+
 
 // Setters para override persistente por tenant (Admin)
 function setEvolutionOverride(url, key){
@@ -961,3 +1090,5 @@ function getEvolutionOverride(){
     };
   }catch(e){ return { url:'', key:'' }; }
 }
+// 🔓 Expor fetchInstances para outras páginas (ex: index.html)
+window.fetchInstances = fetchInstances;

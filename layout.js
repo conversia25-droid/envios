@@ -155,7 +155,7 @@
       </nav>
       <div class="side-footer">
         <button id="logout-btn" class="btn btn-outline" style="width:100%;margin-top:10px;">Sair</button>
-        <div style="margin-top:10px; opacity:.65; font-size:.85rem;">© 2025 Paiva Advogados</div>
+        <div style="margin-top:10px; opacity:.65; font-size:.85rem;">© 2026 Paiva Advogados</div>
       </div>
     </div>
   `;
