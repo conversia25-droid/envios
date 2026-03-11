@@ -4,63 +4,76 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Relatórios — Produção</title>
-
   <link rel="stylesheet" href="theme.css"/>
   <link rel="stylesheet" href="style.css"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <style>
-    /* Tabela de leads */
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    .btn-periodo { background:#f1f5f9; color:#374151; border:1px solid #e5e7eb; cursor:pointer; }
+    .btn-periodo.active { background:#0a8f83; color:#fff; border-color:#0a8f83; }
     .table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; }
     table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
     thead th { text-align: left; background: #f9fafb; border-bottom: 1px solid #e5e7eb; padding: 10px 12px; font-weight: 700; }
     tbody td { border-top: 1px solid #f1f5f9; padding: 10px 12px; }
     .muted { color: #6b7280; }
-    .badge-ok { background:#e8f7f3; color:#065f46; border:1px solid #a7f3d0; padding:2px 8px; border-radius:999px; font-weight:700; font-size:.8rem; }
-    .badge-err{ background:#fef2f2; color:#991b1b; border:1px solid #fecaca; padding:2px 8px; border-radius:999px; font-weight:700; font-size:.8rem; }
-
-    /* Topo: barra de filtros/ações */
+    .badge-ok  { background:#e8f7f3; color:#065f46; border:1px solid #a7f3d0; padding:2px 8px; border-radius:999px; font-weight:700; font-size:.8rem; }
+    .badge-err { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; padding:2px 8px; border-radius:999px; font-weight:700; font-size:.8rem; }
     .toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 8px 0 4px; }
     .toolbar .select, .toolbar .btn { height: 40px; }
     .select, .btn { border-radius: 10px; padding: 8px 10px; border:1px solid #e5e7eb; background:#fff; font-weight:600; }
-    .btn-primary { background:#0a8f83; color:#fff; border:none; }
-
-    /* Cards (gráficos) */
+    .btn-primary { background:#0a8f83; color:#fff; border:none; cursor:pointer; }
     .cards-grid { display: grid; gap: 14px; }
-    @media (min-width: 1024px) {
-      .cards-grid { grid-template-columns: 1fr 1fr 0.8fr; } /* donut menor */
-    }
+    @media (min-width: 1024px) { .cards-grid { grid-template-columns: 1fr 1fr 0.8fr; } }
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px; }
     .card h2 { margin:0 0 8px; font-size:1.1rem; }
     .card.small { padding: 12px; }
     .card.small canvas { max-height: 200px !important; }
+    .pdf-hide { display: none !important; }
+    .pdf-only { display: none; }
+    body.pdf-export .pdf-only { display: block; }
+    #pdf-meta { border:1px solid #e5e7eb; background:#fff; border-radius:12px; padding:10px 12px; }
+    body.pdf-export { background:#fff; }
+    body.pdf-export #relatorios-page { max-width: 820px; margin: 0 auto; }
+    body.pdf-export .table-wrap { overflow: visible !important; }
+    body.pdf-export .cards-grid { grid-template-columns: 1fr !important; }
+    body.pdf-export .summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    body.pdf-export .card, body.pdf-export .summary-item,
+    body.pdf-export .table-wrap, body.pdf-export table,
+    body.pdf-export tr { break-inside:avoid; page-break-inside:avoid; }
   </style>
-  
 </head>
 <body>
-  <main class="main-content">
+  <main class="main-content" id="relatorios-page">
     <header class="page-header">
       <h1>Relatórios — Produção</h1>
       <p class="muted">Acompanhe os envios da tabela <strong>disparos_log</strong>.</p>
     </header>
 
+    <div id="pdf-meta" class="muted pdf-only" style="margin:-6px 0 12px;"></div>
+
     <section class="card">
       <h2>Leads enviados (recentes)</h2>
-      <div class="toolbar">
-        <label class="muted" for="date-filter">Data:</label>
-        <input type="date" id="date-filter" class="select" style="width:auto;">
+      <div class="toolbar" data-pdf-hide="true">
+        <label class="muted">Período:</label>
+        <button class="btn btn-periodo active" data-periodo="30" type="button">Últimos 30 dias</button>
+        <button class="btn btn-periodo" data-periodo="90" type="button">Últimos 90 dias</button>
+        <span class="muted" style="margin:0 4px;">|</span>
+        <label class="muted" for="date-start">De:</label>
+        <input type="date" id="date-start" class="select" style="width:auto;">
+        <label class="muted" for="date-end">Até:</label>
+        <input type="date" id="date-end" class="select" style="width:auto;">
+        <button id="btn-periodo-custom" class="btn btn-primary" type="button">Filtrar</button>
+        <span class="muted" style="margin:0 4px;">|</span>
         <button id="export-csv" class="btn btn-primary" type="button">Exportar CSV</button>
+        <button id="export-pdf" class="btn btn-primary" type="button">Exportar PDF</button>
         <span class="muted" id="leads-hint">Carregando…</span>
       </div>
-
       <div class="table-wrap" style="margin-top:8px;">
         <table aria-label="Leads enviados">
           <thead>
             <tr>
-              <th>Data/Hora</th>
-              <th>Instância</th>
-              <th>Número</th>
-              <th>Status</th>
+              <th>Data/Hora</th><th>Instância</th><th>Número</th><th>Status</th>
             </tr>
           </thead>
           <tbody id="leads-tbody">
@@ -68,6 +81,7 @@
           </tbody>
         </table>
       </div>
+      <div id="paginacao" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;"></div>
     </section>
 
     <section class="summary-grid">
@@ -85,139 +99,434 @@
 
   <script src="auth.js"></script>
   <script src="layout.js"></script>
-
   <script>
-  // ===== Supabase (sem redeclarar SUPABASE_URL) =====
-  const supa = AUTH.getSupabaseInfo();
-  const SB_URL = supa.url;
-  const HEADERS = AUTH.getSupabaseHeaders();
-  const TABLE = AUTH.getDisparosTable();
+    var SB_URL  = AUTH.getSupabaseInfo().url;
+    var HEADERS = AUTH.getSupabaseHeaders();
 
-  const LEAD_FIELD = "numero";
-  let SELECTED_DATE = "";
-  let LAST_LEADS_ROWS = [];
-  let chartHora, chartInstancia, chartStatus;
-
-  const fmtDate = s => s ? new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
-  const toCsvValue = v => {
-    const s = (v ?? "").toString();
-    return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  };
-  const downloadFile = (filename, content, mime="text/csv;charset=utf-8") => {
-    const blob = new Blob([content], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-  };
-
-  async function buscarLeads(limit=500) {
-    let url = `${SB_URL}/rest/v1/${TABLE}?select=instancia,created_at,status,${LEAD_FIELD}&order=created_at.desc&limit=${limit}`;
-    if (SELECTED_DATE) {
-      const start = `${SELECTED_DATE}T00:00:00`;
-      const end = `${SELECTED_DATE}T23:59:59`;
-      url += `&created_at=gte.${start}&created_at=lte.${end}`;
+    function getTable() {
+      return AUTH.getDisparosTable ? AUTH.getDisparosTable() : "disparos_log";
     }
-    const res = await fetch(url, { headers: HEADERS });
-    if (!res.ok) { console.error("Erro buscarLeads:", res.status, res.statusText); return []; }
-    return res.json();
-  }
 
-  function renderLeadsTable(rows) {
-    LAST_LEADS_ROWS = rows.slice();
-    const tbody = document.getElementById('leads-tbody');
-    const hint  = document.getElementById('leads-hint');
-    if (!rows.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="muted">Nenhum registro encontrado.</td></tr>`;
-      if (hint) hint.textContent = 'Sem registros.';
-      return;
+    var LEAD_FIELD      = "numero";
+    var DATE_START      = "";
+    var DATE_END        = "";
+    var LAST_LEADS_ROWS = [];
+    var chartHora, chartInstancia, chartStatus;
+
+    var PAGE_SIZE    = 500;
+    var CURRENT_PAGE = 0;
+    var TOTAL_COUNT  = 0;
+    var ALL_ROWS     = [];
+    var MODO_TUDO    = false;
+
+    (function() {
+      var now  = new Date();
+      DATE_END = now.toISOString().slice(0,10);
+      var past = new Date(now);
+      past.setDate(past.getDate() - 30);
+      DATE_START = past.toISOString().slice(0,10);
+    })();
+
+    function fmtDate(s) {
+      return s ? new Date(s).toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' }) : '—';
     }
-    const html = rows.map(r => {
-      const quando = fmtDate(r.created_at);
-      const inst   = r.instancia || '—';
-      const lead   = r[LEAD_FIELD] || '—';
-      const ok     = /ok|enviado/i.test(r.status||'');
-      const badge  = ok ? `<span class="badge-ok">${r.status||'OK'}</span>` : `<span class="badge-err">${r.status||'Erro'}</span>`;
-      return `<tr><td>${quando}</td><td>${inst}</td><td>${lead}</td><td>${badge}</td></tr>`;
-    }).join("");
-    tbody.innerHTML = html;
-    if (hint) hint.textContent = `Mostrando ${rows.length} registros`;
-  }
 
-  function agruparPorHora(rows){
-    const out={}; rows.forEach(d=>{ const h=new Date(d.created_at).getHours(); out[h]=(out[h]||0)+1;}); return out;
-  }
-  function agruparPorInstancia(rows){
-    const out={}; rows.forEach(d=>{ const k=d.instancia||'—'; out[k]=(out[k]||0)+1;}); return out;
-  }
-  function agruparPorStatus(rows){
-    const out={Sucesso:0,Erro:0}; rows.forEach(d=>{ (/ok|enviado/i.test(d.status||""))?out.Sucesso++:out.Erro++;}); return out;
-  }
+    function toCsvValue(v) {
+      var s = (v == null ? "" : v).toString();
+      return /[",\n;]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+    }
 
-  async function atualizarGraficos() {
-    const dados = await buscarLeads(1000);
-    const porHora = agruparPorHora(dados);
-    const porInst = agruparPorInstancia(dados);
-    const porStat = agruparPorStatus(dados);
+    function downloadFile(filename, content) {
+      var blob = new Blob([content], { type:"text/csv;charset=utf-8" });
+      var url  = URL.createObjectURL(blob);
+      var a    = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
 
-    const ctx1 = document.getElementById('chartEnviosHora').getContext('2d');
-    if (!chartHora) {
-      chartHora = new Chart(ctx1, { type: 'line',
-        data: { labels: Object.keys(porHora), datasets: [{ label:'Envios', data:Object.values(porHora), borderWidth:2, fill:true }] },
-        options: { responsive:true, scales:{ y:{ beginAtZero:true } } }
+    // Busca com paginação (offset/limit) ou tudo (limit muito alto)
+    async function buscarLeads(limit, offset) {
+      limit  = limit  || PAGE_SIZE;
+      offset = offset || 0;
+      var TABLE = getTable();
+      var baseUrl = SB_URL + "/rest/v1/" + TABLE +
+        "?select=instancia,created_at,status," + LEAD_FIELD +
+        "&order=created_at.desc&limit=" + limit + "&offset=" + offset;
+      if (DATE_START) baseUrl += "&created_at=gte." + DATE_START + "T00:00:00";
+      if (DATE_END)   baseUrl += "&created_at=lte." + DATE_END   + "T23:59:59";
+
+      // Headers com count para saber o total
+      var hdrsCount = Object.assign({}, HEADERS, { "Prefer": "count=exact" });
+
+      try {
+        var res = await fetch(baseUrl, { headers: hdrsCount });
+        if (!res.ok) {
+          var msg = "Erro " + res.status + ": " + res.statusText;
+          console.error("buscarLeads:", msg);
+          var hint = document.getElementById('leads-hint');
+          if (hint) hint.textContent = "⚠️ " + msg;
+          document.getElementById('leads-tbody').innerHTML =
+            '<tr><td colspan="4" style="color:#b91c1c;">Erro: ' + msg + '</td></tr>';
+          return [];
+        }
+        // Supabase retorna Content-Range: 0-499/3200
+        var cr = res.headers.get('Content-Range');
+        if (cr) {
+          var total = parseInt(cr.split('/')[1]);
+          if (!isNaN(total)) TOTAL_COUNT = total;
+        }
+        return await res.json();
+      } catch(err) {
+        console.error("Rede:", err);
+        var hint2 = document.getElementById('leads-hint');
+        if (hint2) hint2.textContent = "⚠️ Sem conexão com o banco.";
+        document.getElementById('leads-tbody').innerHTML =
+          '<tr><td colspan="4" style="color:#b91c1c;">Falha de rede: ' + err.message + '</td></tr>';
+        return [];
+      }
+    }
+
+    // Busca TODOS os registros usando loop de páginas
+    async function buscarTodos() {
+      var todos  = [];
+      var offset = 0;
+      var batch  = 1000;
+      var hint   = document.getElementById('leads-hint');
+      while (true) {
+        if (hint) hint.textContent = "Carregando… " + todos.length + " registros";
+        var parte = await buscarLeads(batch, offset);
+        if (!parte.length) break;
+        todos = todos.concat(parte);
+        offset += parte.length;
+        if (parte.length < batch) break; // última página
+      }
+      return todos;
+    }
+
+    function renderLeadsTable(rows) {
+      LAST_LEADS_ROWS = rows.slice();
+      var tbody = document.getElementById('leads-tbody');
+      var hint  = document.getElementById('leads-hint');
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="muted">Nenhum registro encontrado.</td></tr>';
+        if (hint) hint.textContent = 'Sem registros.';
+        return;
+      }
+      tbody.innerHTML = rows.map(function(r) {
+        var quando = fmtDate(r.created_at);
+        var inst   = r.instancia || '—';
+        var lead   = r[LEAD_FIELD] || '—';
+        var ok     = /ok|enviado/i.test(r.status || '');
+        var badge  = ok
+          ? '<span class="badge-ok">' + (r.status||'OK') + '</span>'
+          : '<span class="badge-err">' + (r.status||'Erro') + '</span>';
+        return '<tr><td>' + quando + '</td><td>' + inst + '</td><td>' + lead + '</td><td>' + badge + '</td></tr>';
+      }).join("");
+      if (hint) hint.textContent = "Mostrando " + rows.length + " registros";
+    }
+
+    function agruparPorHora(rows) {
+      var out = {};
+      rows.forEach(function(d) { var h = new Date(d.created_at).getHours(); out[h] = (out[h]||0)+1; });
+      return out;
+    }
+    function agruparPorInstancia(rows) {
+      var out = {};
+      rows.forEach(function(d) { var k = d.instancia||'—'; out[k] = (out[k]||0)+1; });
+      return out;
+    }
+    function agruparPorStatus(rows) {
+      var out = { Sucesso:0, Erro:0 };
+      rows.forEach(function(d) { (/ok|enviado/i.test(d.status||"")) ? out.Sucesso++ : out.Erro++; });
+      return out;
+    }
+
+    async function atualizarLeads() {
+      CURRENT_PAGE = 0;
+      MODO_TUDO    = false;
+      ALL_ROWS     = [];
+      var data = await buscarLeads(PAGE_SIZE, 0);
+      LAST_LEADS_ROWS = data;
+      renderLeadsTable(data);
+      renderPaginacao();
+      atualizarTotaisTabela(data);
+    }
+
+    function atualizarTotaisTabela(data) {
+      // Usa TOTAL_COUNT do Content-Range se disponível, senão usa len dos dados
+      var total   = MODO_TUDO ? data.length : (TOTAL_COUNT || data.length);
+      document.getElementById('total-envios').textContent  = total.toLocaleString('pt-BR');
+      // Sucesso/falha calculado sobre os dados visíveis na página atual
+      var sucesso = data.filter(function(d){ return /ok|enviado/i.test(d.status||''); }).length;
+      document.getElementById('sucesso-total').textContent = sucesso.toLocaleString('pt-BR');
+      document.getElementById('falhas-total').textContent  = (data.length - sucesso).toLocaleString('pt-BR');
+    }
+
+    function renderPaginacao() {
+      var container = document.getElementById('paginacao');
+      if (!container) return;
+      if (MODO_TUDO) {
+        container.innerHTML = '<span class="muted">Mostrando todos os registros</span>' +
+          '<button class="btn btn-periodo" id="btn-voltar-paginas" type="button">Voltar à paginação</button>';
+        document.getElementById('btn-voltar-paginas').addEventListener('click', function() {
+          MODO_TUDO = false; ALL_ROWS = []; CURRENT_PAGE = 0;
+          atualizarLeads(); atualizarGraficos();
+        });
+        return;
+      }
+      var totalPags = TOTAL_COUNT ? Math.ceil(TOTAL_COUNT / PAGE_SIZE) : 1;
+      var html = '';
+      html += '<button class="btn btn-periodo" id="btn-pag-prev" type="button" ' + (CURRENT_PAGE === 0 ? 'disabled' : '') + '>← Anterior</button>';
+      html += '<span class="muted" style="padding:0 8px;">Página ' + (CURRENT_PAGE+1) + (TOTAL_COUNT ? ' de ' + totalPags : '') + '</span>';
+      html += '<button class="btn btn-periodo" id="btn-pag-next" type="button" ' + (LAST_LEADS_ROWS.length < PAGE_SIZE ? 'disabled' : '') + '>Próxima →</button>';
+      html += '<span class="muted" style="margin:0 4px;">|</span>';
+      html += '<button class="btn btn-primary" id="btn-carregar-tudo" type="button">Carregar tudo</button>';
+      container.innerHTML = html;
+
+      document.getElementById('btn-pag-prev').addEventListener('click', async function() {
+        if (CURRENT_PAGE > 0) {
+          CURRENT_PAGE--;
+          var data = await buscarLeads(PAGE_SIZE, CURRENT_PAGE * PAGE_SIZE);
+          LAST_LEADS_ROWS = data;
+          renderLeadsTable(data);
+          renderPaginacao();
+          atualizarTotaisTabela(data);
+        }
       });
-    } else {
-      chartHora.data.labels = Object.keys(porHora);
-      chartHora.data.datasets[0].data = Object.values(porHora);
-      chartHora.update();
-    }
-
-    const ctx2 = document.getElementById('chartInstancia').getContext('2d');
-    if (!chartInstancia) {
-      chartInstancia = new Chart(ctx2, { type: 'bar',
-        data: { labels: Object.keys(porInst), datasets: [{ label:'Envios por Instância', data:Object.values(porInst), borderWidth:1 }] },
-        options: { responsive:true, scales:{ y:{ beginAtZero:true } } }
+      document.getElementById('btn-pag-next').addEventListener('click', async function() {
+        if (LAST_LEADS_ROWS.length >= PAGE_SIZE) {
+          CURRENT_PAGE++;
+          var data = await buscarLeads(PAGE_SIZE, CURRENT_PAGE * PAGE_SIZE);
+          LAST_LEADS_ROWS = data;
+          renderLeadsTable(data);
+          renderPaginacao();
+          atualizarTotaisTabela(data);
+        }
       });
-    } else {
-      chartInstancia.data.labels = Object.keys(porInst);
-      chartInstancia.data.datasets[0].data = Object.values(porInst);
-      chartInstancia.update();
-    }
-
-    const ctx3 = document.getElementById('chartStatus').getContext('2d');
-    if (!chartStatus) {
-      chartStatus = new Chart(ctx3, { type: 'doughnut',
-        data: { labels: Object.keys(porStat), datasets: [{ data:Object.values(porStat), borderWidth:1 }] },
-        options: { responsive:true, plugins:{ legend:{ position:'bottom' } }, cutout:'60%' }
+      document.getElementById('btn-carregar-tudo').addEventListener('click', async function() {
+        MODO_TUDO = true;
+        var todos = await buscarTodos();
+        ALL_ROWS = todos;
+        LAST_LEADS_ROWS = todos;
+        renderLeadsTable(todos);
+        renderPaginacao();
+        atualizarTotaisTabela(todos);
+        // Regraficos com todos os dados
+        atualizarGraficosComDados(todos);
       });
-    } else {
-      chartStatus.data.labels = Object.keys(porStat);
-      chartStatus.data.datasets[0].data = Object.values(porStat);
-      chartStatus.update();
     }
-  }
 
-  function exportarCsv(){
-    const header = ["Data/Hora","Instância","Número","Status"];
-    const lines = LAST_LEADS_ROWS.map(r => [fmtDate(r.created_at), r.instancia||"", r[LEAD_FIELD]||"", r.status||""].map(toCsvValue).join(","));
-    downloadFile("leads_producao.csv", [header.join(","), ...lines].join("\n"));
-  }
+    // Versão que aceita dados já carregados (usado no "Carregar tudo")
+    function atualizarGraficosComDados(dados) {
+      var porHora = agruparPorHora(dados);
+      var porInst = agruparPorInstancia(dados);
+      var porStat = agruparPorStatus(dados);
+      _renderGraficos(porHora, porInst, porStat);
+    }
 
-  async function init(){
-    await atualizarLeads(); await atualizarGraficos();
-    document.getElementById('date-filter').addEventListener('change', async (e)=>{ SELECTED_DATE=e.target.value; await atualizarLeads(); await atualizarGraficos(); });
-    document.getElementById('export-csv').addEventListener('click', exportarCsv);
-    setInterval(async ()=>{ await atualizarLeads(); await atualizarGraficos(); }, 10000);
-  }
-  async function atualizarLeads(){
-    const data = await buscarLeads();
-    renderLeadsTable(data);
-    document.getElementById('total-envios').textContent = data.length.toLocaleString('pt-BR');
-    const sucesso = data.filter(d => /ok|enviado/i.test(d.status||'')).length;
-    document.getElementById('sucesso-total').textContent = sucesso.toLocaleString('pt-BR');
-    document.getElementById('falhas-total').textContent = (data.length - sucesso).toLocaleString('pt-BR');
-  }
-  init();
+    async function atualizarGraficos() {
+      var fonte = MODO_TUDO && ALL_ROWS.length ? ALL_ROWS : null;
+      var dados = fonte || await buscarLeads(PAGE_SIZE * 10, 0); // carrega até 5000 para gráficos
+      var porHora = agruparPorHora(dados);
+      var porInst = agruparPorInstancia(dados);
+      var porStat = agruparPorStatus(dados);
+      _renderGraficos(porHora, porInst, porStat);
+    }
+
+    function _renderGraficos(porHora, porInst, porStat) {
+      var ctx1 = document.getElementById('chartEnviosHora').getContext('2d');
+      if (!chartHora) {
+        chartHora = new Chart(ctx1, { type:'line',
+          data:{ labels:Object.keys(porHora), datasets:[{ label:'Envios', data:Object.values(porHora), borderWidth:2, fill:true }] },
+          options:{ responsive:true, scales:{ y:{ beginAtZero:true } } }
+        });
+      } else {
+        chartHora.data.labels = Object.keys(porHora);
+        chartHora.data.datasets[0].data = Object.values(porHora);
+        chartHora.update();
+      }
+
+      var ctx2 = document.getElementById('chartInstancia').getContext('2d');
+      if (!chartInstancia) {
+        chartInstancia = new Chart(ctx2, { type:'bar',
+          data:{ labels:Object.keys(porInst), datasets:[{ label:'Envios por Instância', data:Object.values(porInst), borderWidth:1 }] },
+          options:{ responsive:true, scales:{ y:{ beginAtZero:true } } }
+        });
+      } else {
+        chartInstancia.data.labels = Object.keys(porInst);
+        chartInstancia.data.datasets[0].data = Object.values(porInst);
+        chartInstancia.update();
+      }
+
+      var ctx3 = document.getElementById('chartStatus').getContext('2d');
+      if (!chartStatus) {
+        chartStatus = new Chart(ctx3, { type:'doughnut',
+          data:{ labels:Object.keys(porStat), datasets:[{ data:Object.values(porStat), borderWidth:1 }] },
+          options:{ responsive:true, plugins:{ legend:{ position:'bottom' } }, cutout:'60%' }
+        });
+      } else {
+        chartStatus.data.labels = Object.keys(porStat);
+        chartStatus.data.datasets[0].data = Object.values(porStat);
+        chartStatus.update();
+      }
+    }
+
+    function exportarCsv() {
+      var header = ["Data/Hora","Instância","Número","Status"];
+      var lines  = LAST_LEADS_ROWS.map(function(r) {
+        return [fmtDate(r.created_at), r.instancia||"", r[LEAD_FIELD]||"", r.status||""].map(toCsvValue).join(",");
+      });
+      downloadFile("leads_producao.csv", [header.join(",")].concat(lines).join("\n"));
+    }
+
+    async function exportarPdf() {
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+        alert('Biblioteca jsPDF não carregou. Verifique sua conexão e recarregue a página.');
+        return;
+      }
+      var btn = document.getElementById('export-pdf');
+      btn.disabled    = true;
+      btn.textContent = 'Gerando PDF…';
+
+      try {
+        var hint = document.getElementById('leads-hint');
+        if (hint) hint.textContent = 'Carregando todos os registros para o PDF…';
+
+        // Busca TODOS os registros para o PDF (não só a página atual)
+        var todosDados = await buscarTodos();
+
+        if (hint) hint.textContent = todosDados.length + ' registros carregados. Gerando PDF…';
+
+        var jsPDF = window.jspdf.jsPDF;
+        var doc   = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+        // --- Cabeçalho ---
+        var agora   = new Date().toLocaleString('pt-BR');
+        var periodo = 'Período: ' + DATE_START + ' a ' + DATE_END;
+
+        doc.setFontSize(16);
+        doc.setTextColor(10, 143, 131);
+        doc.text('Relatório de Envios — Produção', 14, 15);
+
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        doc.text(periodo, 14, 22);
+        doc.text('Gerado em: ' + agora, 14, 27);
+
+        // --- Totais ---
+        var totalReg = todosDados.length;
+        var sucesso  = todosDados.filter(function(d){ return /ok|enviado/i.test(d.status||''); }).length;
+        var falhas   = totalReg - sucesso;
+
+        doc.setFontSize(10);
+        doc.setTextColor(0,0,0);
+        doc.text('Total: ' + totalReg.toLocaleString('pt-BR') +
+                 '   Sucessos: ' + sucesso.toLocaleString('pt-BR') +
+                 '   Falhas: ' + falhas.toLocaleString('pt-BR'), 14, 34);
+
+        // --- Tabela com todos os registros ---
+        var cabecalho = [['Data/Hora', 'Instância', 'Número', 'Status']];
+        var linhas = todosDados.map(function(r) {
+          return [
+            fmtDate(r.created_at),
+            r.instancia || '—',
+            r[LEAD_FIELD] || '—',
+            r.status || '—'
+          ];
+        });
+
+        doc.autoTable({
+          head: cabecalho,
+          body: linhas,
+          startY: 38,
+          styles: { fontSize: 8, cellPadding: 2 },
+          headStyles: { fillColor: [10, 143, 131], textColor: 255, fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [245, 250, 249] },
+          didParseCell: function(data) {
+            if (data.section === 'body' && data.column.index === 3) {
+              var v = (data.cell.raw || '').toLowerCase();
+              if (/ok|enviado/.test(v)) {
+                data.cell.styles.textColor = [6, 95, 70];
+                data.cell.styles.fillColor = [232, 247, 243];
+              } else {
+                data.cell.styles.textColor = [153, 27, 27];
+                data.cell.styles.fillColor = [254, 242, 242];
+              }
+            }
+          },
+          margin: { left: 14, right: 14 }
+        });
+
+        // Rodapé com número de página
+        var totalPags = doc.internal.getNumberOfPages();
+        for (var i = 1; i <= totalPags; i++) {
+          doc.setPage(i);
+          doc.setFontSize(8);
+          doc.setTextColor(150, 150, 150);
+          doc.text('Página ' + i + ' de ' + totalPags, doc.internal.pageSize.getWidth() - 30, doc.internal.pageSize.getHeight() - 8);
+        }
+
+        doc.save('relatorio_' + DATE_START + '_' + DATE_END + '.pdf');
+        if (hint) hint.textContent = 'PDF gerado com ' + totalReg.toLocaleString('pt-BR') + ' registros.';
+
+      } catch(e) {
+        console.error("Erro PDF:", e);
+        alert("Falha ao gerar PDF: " + e.message);
+      } finally {
+        btn.disabled    = false;
+        btn.textContent = 'Exportar PDF';
+      }
+    }
+
+    async function init() {
+      await atualizarLeads();
+      await atualizarGraficos();
+
+      document.getElementById('date-start').value = DATE_START;
+      document.getElementById('date-end').value   = DATE_END;
+
+      document.querySelectorAll('.btn-periodo').forEach(function(btn) {
+        btn.addEventListener('click', async function() {
+          document.querySelectorAll('.btn-periodo').forEach(function(b){ b.classList.remove('active'); });
+          btn.classList.add('active');
+          var dias = parseInt(btn.getAttribute('data-periodo'));
+          var now  = new Date();
+          DATE_END = now.toISOString().slice(0,10);
+          var past = new Date(now);
+          past.setDate(past.getDate() - dias);
+          DATE_START = past.toISOString().slice(0,10);
+          CURRENT_PAGE = 0; MODO_TUDO = false; ALL_ROWS = [];
+          document.getElementById('date-start').value = DATE_START;
+          document.getElementById('date-end').value   = DATE_END;
+          await atualizarLeads();
+          await atualizarGraficos();
+        });
+      });
+
+      document.getElementById('btn-periodo-custom').addEventListener('click', async function() {
+        var s = document.getElementById('date-start').value;
+        var e = document.getElementById('date-end').value;
+        if (!s || !e) { alert('Selecione data inicial e data final.'); return; }
+        if (s > e)    { alert('A data inicial deve ser anterior à data final.'); return; }
+        DATE_START = s;
+        DATE_END   = e;
+        CURRENT_PAGE = 0; MODO_TUDO = false; ALL_ROWS = [];
+        document.querySelectorAll('.btn-periodo').forEach(function(b){ b.classList.remove('active'); });
+        await atualizarLeads();
+        await atualizarGraficos();
+      });
+
+      document.getElementById('export-csv').addEventListener('click', exportarCsv);
+      document.getElementById('export-pdf').addEventListener('click', exportarPdf);
+
+      setInterval(async function() {
+        await atualizarLeads();
+        await atualizarGraficos();
+      }, 10000);
+    }
+
+    init();
   </script>
 </body>
 </html>

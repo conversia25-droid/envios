@@ -10,6 +10,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
+    .btn-periodo { background:#f1f5f9; color:#374151; border:1px solid #e5e7eb; cursor:pointer; }
+    .btn-periodo.active { background:#0a8f83; color:#fff; border-color:#0a8f83; }
     /* Tabela de leads */
     .table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; }
     table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
@@ -47,8 +49,16 @@
     <section class="card">
       <h2>Leads enviados (recentes)</h2>
       <div class="toolbar">
-        <label class="muted" for="date-filter">Data:</label>
-        <input type="date" id="date-filter" class="select" style="width:auto;">
+        <label class="muted">Período:</label>
+        <button class="btn btn-periodo active" data-periodo="30" type="button">Últimos 30 dias</button>
+        <button class="btn btn-periodo" data-periodo="90" type="button">Últimos 90 dias</button>
+        <span class="muted" style="margin:0 4px;">|</span>
+        <label class="muted" for="date-start">De:</label>
+        <input type="date" id="date-start" class="select" style="width:auto;">
+        <label class="muted" for="date-end">Até:</label>
+        <input type="date" id="date-end" class="select" style="width:auto;">
+        <button id="btn-periodo-custom" class="btn btn-primary" type="button">Filtrar</button>
+        <span class="muted" style="margin:0 4px;">|</span>
         <button id="export-csv" class="btn btn-primary" type="button">Exportar CSV</button>
         <span class="muted" id="leads-hint">Carregando…</span>
       </div>
@@ -87,14 +97,22 @@
   <script src="layout.js"></script>
 
   <script>
-  // ===== Supabase (sem redeclarar SUPABASE_URL) =====
+  // ===== Supabase =====
   const supa = AUTH.getSupabaseInfo();
   const SB_URL = supa.url;
   const HEADERS = AUTH.getSupabaseHeaders();
-  const TABLE = "disparos_log";
+  // TABLE fixa para prod, mas segura para não quebrar se auth falhar
+  function getTable() { return "disparos_log"; }
 
   const LEAD_FIELD = "numero";
-  let SELECTED_DATE = "";
+  let DATE_START = "";
+  let DATE_END = "";
+  (function setDefaultPeriod() {
+    const now = new Date();
+    DATE_END = now.toISOString().slice(0, 10);
+    const past = new Date(now); past.setDate(past.getDate() - 30);
+    DATE_START = past.toISOString().slice(0, 10);
+  })();
   let LAST_LEADS_ROWS = [];
   let chartHora, chartInstancia, chartStatus;
 
@@ -112,15 +130,30 @@
   };
 
   async function buscarLeads(limit=500) {
+    const TABLE = getTable();
     let url = `${SB_URL}/rest/v1/${TABLE}?select=instancia,created_at,status,${LEAD_FIELD}&order=created_at.desc&limit=${limit}`;
-    if (SELECTED_DATE) {
-      const start = `${SELECTED_DATE}T00:00:00`;
-      const end = `${SELECTED_DATE}T23:59:59`;
-      url += `&created_at=gte.${start}&created_at=lte.${end}`;
+    if (DATE_START) url += `&created_at=gte.${DATE_START}T00:00:00`;
+    if (DATE_END)   url += `&created_at=lte.${DATE_END}T23:59:59`;
+    try {
+      const res = await fetch(url, { headers: HEADERS });
+      if (!res.ok) {
+        const msg = `Erro ${res.status}: ${res.statusText}`;
+        console.error("Erro buscarLeads:", msg);
+        const hint = document.getElementById('leads-hint');
+        if (hint) hint.textContent = `⚠️ ${msg} — verifique login e conexão.`;
+        document.getElementById('leads-tbody').innerHTML =
+          `<tr><td colspan="4" class="muted" style="color:#b91c1c;">Erro ao buscar dados: ${msg}</td></tr>`;
+        return [];
+      }
+      return res.json();
+    } catch (err) {
+      console.error("Erro de rede:", err);
+      const hint = document.getElementById('leads-hint');
+      if (hint) hint.textContent = `⚠️ Sem conexão com o banco.`;
+      document.getElementById('leads-tbody').innerHTML =
+        `<tr><td colspan="4" class="muted" style="color:#b91c1c;">Falha de rede: ${err.message}</td></tr>`;
+      return [];
     }
-    const res = await fetch(url, { headers: HEADERS });
-    if (!res.ok) { console.error("Erro buscarLeads:", res.status, res.statusText); return []; }
-    return res.json();
   }
 
   function renderLeadsTable(rows) {
@@ -205,7 +238,35 @@
 
   async function init(){
     await atualizarLeads(); await atualizarGraficos();
-    document.getElementById('date-filter').addEventListener('change', async (e)=>{ SELECTED_DATE=e.target.value; await atualizarLeads(); await atualizarGraficos(); });
+
+    document.getElementById('date-start').value = DATE_START;
+    document.getElementById('date-end').value   = DATE_END;
+
+    document.querySelectorAll('.btn-periodo').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        document.querySelectorAll('.btn-periodo').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const dias = parseInt(btn.dataset.periodo);
+        const now = new Date();
+        DATE_END   = now.toISOString().slice(0, 10);
+        const past = new Date(now); past.setDate(past.getDate() - dias);
+        DATE_START = past.toISOString().slice(0, 10);
+        document.getElementById('date-start').value = DATE_START;
+        document.getElementById('date-end').value   = DATE_END;
+        await atualizarLeads(); await atualizarGraficos();
+      });
+    });
+
+    document.getElementById('btn-periodo-custom').addEventListener('click', async () => {
+      const s = document.getElementById('date-start').value;
+      const e = document.getElementById('date-end').value;
+      if (!s || !e) { alert('Selecione data inicial e data final.'); return; }
+      if (s > e) { alert('A data inicial deve ser anterior à data final.'); return; }
+      DATE_START = s; DATE_END = e;
+      document.querySelectorAll('.btn-periodo').forEach(b => b.classList.remove('active'));
+      await atualizarLeads(); await atualizarGraficos();
+    });
+
     document.getElementById('export-csv').addEventListener('click', exportarCsv);
     setInterval(async ()=>{ await atualizarLeads(); await atualizarGraficos(); }, 10000);
   }
