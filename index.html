@@ -134,42 +134,30 @@ const SB_URL = supa.url;
 const HEADERS = AUTH.getSupabaseHeaders();
 const TABLE = AUTH.getDisparosTable();
 
-async function fetchDisparos(limit=10000) {
-  const url = `${SB_URL}/rest/v1/${TABLE}?select=instancia,created_at&order=created_at.desc&limit=${limit}`;
-  const res = await fetch(url, { headers: HEADERS });
-  return res.ok ? res.json() : [];
-}
-// 👉 3) COLE A NOVA FUNÇÃO AQUI (logo abaixo)
-  async function fetchDisparosMesCount() {
-    const agora = new Date();
-
-    const inicioMes = new Date(
-      agora.getFullYear(),
-      agora.getMonth(),
-      1, 0, 0, 0, 0
-    ).toISOString();
-
-    const fimMes = new Date(
-      agora.getFullYear(),
-      agora.getMonth() + 1,
-      0, 23, 59, 59, 999
-    ).toISOString();
-
-    const url =
-      `${SB_URL}/rest/v1/${TABLE}` +
-      `?created_at=gte.${inicioMes}` +
-      `&created_at=lte.${fimMes}` +
-      `&select=id`;
-
-    const res = await fetch(url, {
-      headers: {
-        ...HEADERS,
-        Prefer: "count=exact"
-      }
-    });
-
+// Busca contagem exata de um período via Content-Range (sem limite)
+  async function fetchCount(inicio, fim) {
+    const url = `${SB_URL}/rest/v1/${TABLE}?select=id&created_at=gte.${inicio}&created_at=lte.${fim}`;
+    const res = await fetch(url, { headers: { ...HEADERS, Prefer: "count=exact" } });
     const range = res.headers.get("content-range");
     return range ? Number(range.split("/")[1]) : 0;
+  }
+
+  // Busca registros com instancia (para ranking) de um período — loop paginado sem limite
+  async function fetchDisparosPeriodo(inicio, fim) {
+    const todos = [];
+    let offset = 0;
+    const batch = 1000;
+    while (true) {
+      const url = `${SB_URL}/rest/v1/${TABLE}?select=instancia,created_at&created_at=gte.${inicio}&created_at=lte.${fim}&order=created_at.desc&limit=${batch}&offset=${offset}`;
+      const res = await fetch(url, { headers: HEADERS });
+      if (!res.ok) break;
+      const parte = await res.json();
+      if (!parte.length) break;
+      todos.push(...parte);
+      offset += parte.length;
+      if (parte.length < batch) break;
+    }
+    return todos;
   }
 
 
@@ -222,117 +210,184 @@ async function fetchInstanciasAtivas() {
 
 /* ========================================================= */
 
-function filtrarPeriodo(data, tipo) {
-  const agora = new Date();
+// Calcula os intervalos de data para cada período
+  function calcularIntervalos() {
+    const agora = new Date();
 
-  return data.filter(d => {
-    const dt = new Date(d.created_at);
+    // Hoje
+    const inicioDia = new Date(agora); inicioDia.setHours(0,0,0,0);
+    const fimDia    = new Date(agora); fimDia.setHours(23,59,59,999);
 
-    if (tipo === "dia") {
-      return dt.toDateString() === agora.toDateString();
-    }
+    // Semana (domingo a sábado)
+    const inicioSemana = new Date(agora); inicioSemana.setHours(0,0,0,0);
+    inicioSemana.setDate(agora.getDate() - agora.getDay());
+    const fimSemana = new Date(inicioSemana);
+    fimSemana.setDate(inicioSemana.getDate() + 6);
+    fimSemana.setHours(23,59,59,999);
 
-    if (tipo === "semana") {
-      const inicioSemana = new Date(agora);
-      inicioSemana.setHours(0, 0, 0, 0);
-      inicioSemana.setDate(agora.getDate() - agora.getDay());
+    // Mês
+    const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1, 0,0,0,0);
+    const fimMes    = new Date(agora.getFullYear(), agora.getMonth()+1, 0, 23,59,59,999);
 
-      const fimSemana = new Date(inicioSemana);
-      fimSemana.setDate(inicioSemana.getDate() + 6);
-      fimSemana.setHours(23, 59, 59, 999);
-
-      return dt >= inicioSemana && dt <= fimSemana;
-    }
-
-    if (tipo === "mes") {
-  const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1, 0, 0, 0, 0);
-  const fimMes = new Date(agora.getFullYear(), agora.getMonth() + 1, 0, 23, 59, 59, 999);
-
-  return dt >= inicioMes && dt <= fimMes;
-}
-  });
-}
-
-
-function rankingInstancias(data) {
-  const m={};
-  data.forEach(d=>{
-    const i=d.instancia||"—";
-    m[i]=(m[i]||0)+1;
-  });
-  return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,5);
-}
-
-function renderRanking(id, lista) {
-  const el=document.getElementById(id);
-  el.innerHTML="";
-  lista.forEach(([inst,qtd],idx)=>{
-    const div=document.createElement("div");
-    div.className="ranking-item";
-    div.innerHTML=`
-      <div class="ranking-left">
-        <div class="ranking-pos">${idx+1}</div>
-        <div>${inst}</div>
-      </div>
-      <div class="ranking-count">${qtd}</div>
-    `;
-    el.appendChild(div);
-  });
-}
-
-async function atualizarResumo() {
-  const data = await fetchDisparos();
-
-  const dia = filtrarPeriodo(data,"dia");
-  const semana = filtrarPeriodo(data,"semana");
-  const mes = filtrarPeriodo(data,"mes");
-
-  document.getElementById("kpi-dia").textContent = dia.length;
-  document.getElementById("kpi-semana").textContent = semana.length;
-  document.getElementById("kpi-mes").textContent =
-  await fetchDisparosMesCount();
-
-  // 👇 só essa linha já existia, agora a função funciona de verdade
-  document.getElementById("instancias-ativas").textContent = await fetchInstanciasAtivas();
-
-  renderRanking("rank-dia", rankingInstancias(dia));
-  renderRanking("rank-semana", rankingInstancias(semana));
-  renderRanking("rank-mes", rankingInstancias(mes));
-}
-
-let chart, periodoAtual="dia";
-function setPeriodo(p){periodoAtual=p;atualizarGrafico();}
-
-async function atualizarGrafico() {
-  const data = await fetchDisparos();
-  const filtrado = filtrarPeriodo(data, periodoAtual);
-
-  const mapa={};
-  filtrado.forEach(d=>{
-    const dt=new Date(d.created_at);
-    const k = periodoAtual==="dia"
-      ? String(dt.getHours()).padStart(2,"0")
-      : dt.toLocaleDateString("pt-BR");
-    mapa[k]=(mapa[k]||0)+1;
-  });
-
-  const ctx=document.getElementById("chartEnvios").getContext("2d");
-  if (!chart) {
-    chart=new Chart(ctx,{
-      type:"line",
-      data:{labels:Object.keys(mapa),datasets:[{label:"Disparos",data:Object.values(mapa),fill:true,borderWidth:2}]},
-      options:{responsive:true,scales:{y:{beginAtZero:true}}}
-    });
-  } else {
-    chart.data.labels=Object.keys(mapa);
-    chart.data.datasets[0].data=Object.values(mapa);
-    chart.update();
+    return {
+      dia:    { inicio: inicioDia.toISOString(),    fim: fimDia.toISOString() },
+      semana: { inicio: inicioSemana.toISOString(), fim: fimSemana.toISOString() },
+      mes:    { inicio: inicioMes.toISOString(),    fim: fimMes.toISOString() }
+    };
   }
-}
 
-atualizarResumo();
-atualizarGrafico();
-setInterval(atualizarResumo,10000);
+  function rankingInstancias(data) {
+    const m = {};
+    data.forEach(d => { const i = d.instancia||"—"; m[i] = (m[i]||0)+1; });
+    return Object.entries(m).sort((a,b) => b[1]-a[1]).slice(0,5);
+  }
+
+  function renderRanking(id, lista) {
+    const el = document.getElementById(id);
+    el.innerHTML = "";
+    lista.forEach(([inst, qtd], idx) => {
+      const div = document.createElement("div");
+      div.className = "ranking-item";
+      div.innerHTML = `
+        <div class="ranking-left">
+          <div class="ranking-pos">${idx+1}</div>
+          <div>${inst}</div>
+        </div>
+        <div class="ranking-count">${qtd.toLocaleString('pt-BR')}</div>
+      `;
+      el.appendChild(div);
+    });
+    if (!lista.length) el.innerHTML = '<span style="color:#6b7280;font-size:.9rem;">Sem registros</span>';
+  }
+
+  async function atualizarResumo() {
+    const iv = calcularIntervalos();
+
+    // KPIs: contagem exata via Content-Range (sem trava de limite)
+    const [cntDia, cntSemana, cntMes, ativas] = await Promise.all([
+      fetchCount(iv.dia.inicio,    iv.dia.fim),
+      fetchCount(iv.semana.inicio, iv.semana.fim),
+      fetchCount(iv.mes.inicio,    iv.mes.fim),
+      fetchInstanciasAtivas()
+    ]);
+
+    document.getElementById("kpi-dia").textContent    = cntDia.toLocaleString('pt-BR');
+    document.getElementById("kpi-semana").textContent = cntSemana.toLocaleString('pt-BR');
+    document.getElementById("kpi-mes").textContent    = cntMes.toLocaleString('pt-BR');
+    document.getElementById("instancias-ativas").textContent = ativas;
+
+    // Rankings: busca com paginação para ter todos os registros do período
+    const [diaDados, semanaDados, mesDados] = await Promise.all([
+      fetchDisparosPeriodo(iv.dia.inicio,    iv.dia.fim),
+      fetchDisparosPeriodo(iv.semana.inicio, iv.semana.fim),
+      fetchDisparosPeriodo(iv.mes.inicio,    iv.mes.fim)
+    ]);
+
+    renderRanking("rank-dia",    rankingInstancias(diaDados));
+    renderRanking("rank-semana", rankingInstancias(semanaDados));
+    renderRanking("rank-mes",    rankingInstancias(mesDados));
+  }
+
+// Cache dos dados já buscados pelo atualizarResumo — evita busca dupla
+  let _cacheGrafico = { dia: [], semana: [], mes: [] };
+
+  let chart, periodoAtual = "dia";
+  function setPeriodo(p) { periodoAtual = p; renderGrafico(_cacheGrafico[p]); }
+
+  function renderGrafico(dados) {
+    const mapa = {};
+
+    if (periodoAtual === "dia") {
+      // Agrupa por hora: 00h, 01h ... 23h (garante todas as horas no eixo)
+      for (let h = 0; h < 24; h++) mapa[String(h).padStart(2,"0") + "h"] = 0;
+      dados.forEach(d => {
+        const k = String(new Date(d.created_at).getHours()).padStart(2,"0") + "h";
+        mapa[k]++;
+      });
+
+    } else if (periodoAtual === "semana") {
+      // Agrupa por dia da semana: Dom, Seg... Sab
+      const dias = ["Dom","Seg","Ter","Qua","Qui","Sex","Sab"];
+      dias.forEach(d => mapa[d] = 0);
+      dados.forEach(d => {
+        const k = dias[new Date(d.created_at).getDay()];
+        mapa[k]++;
+      });
+
+    } else {
+      // Mês: agrupa por dia (DD/MM) — todos os dados, sem limite
+      dados.forEach(d => {
+        const dt = new Date(d.created_at);
+        const k  = dt.toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit" });
+        mapa[k] = (mapa[k]||0) + 1;
+      });
+    }
+
+    const labels = Object.keys(mapa);
+    const values = Object.values(mapa);
+
+    const ctx = document.getElementById("chartEnvios").getContext("2d");
+    if (!chart) {
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Disparos",
+            data: values,
+            backgroundColor: "rgba(10,143,131,0.7)",
+            borderColor: "#0a8f83",
+            borderWidth: 1,
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        }
+      });
+    } else {
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = values;
+      chart.update();
+    }
+  }
+
+  // Sobrescreve atualizarResumo para também popular o cache do gráfico
+  const _atualizarResumoOriginal = atualizarResumo;
+  atualizarResumo = async function() {
+    const iv = calcularIntervalos();
+
+    const [cntDia, cntSemana, cntMes, ativas] = await Promise.all([
+      fetchCount(iv.dia.inicio,    iv.dia.fim),
+      fetchCount(iv.semana.inicio, iv.semana.fim),
+      fetchCount(iv.mes.inicio,    iv.mes.fim),
+      fetchInstanciasAtivas()
+    ]);
+
+    document.getElementById("kpi-dia").textContent    = cntDia.toLocaleString('pt-BR');
+    document.getElementById("kpi-semana").textContent = cntSemana.toLocaleString('pt-BR');
+    document.getElementById("kpi-mes").textContent    = cntMes.toLocaleString('pt-BR');
+    document.getElementById("instancias-ativas").textContent = ativas;
+
+    const [diaDados, semanaDados, mesDados] = await Promise.all([
+      fetchDisparosPeriodo(iv.dia.inicio,    iv.dia.fim),
+      fetchDisparosPeriodo(iv.semana.inicio, iv.semana.fim),
+      fetchDisparosPeriodo(iv.mes.inicio,    iv.mes.fim)
+    ]);
+
+    renderRanking("rank-dia",    rankingInstancias(diaDados));
+    renderRanking("rank-semana", rankingInstancias(semanaDados));
+    renderRanking("rank-mes",    rankingInstancias(mesDados));
+
+    // Atualiza cache e redesenha gráfico com dados frescos
+    _cacheGrafico = { dia: diaDados, semana: semanaDados, mes: mesDados };
+    renderGrafico(_cacheGrafico[periodoAtual]);
+  };
+
+  atualizarResumo();
+  setInterval(atualizarResumo, 10000);
 </script>
 </body>
 </html>
